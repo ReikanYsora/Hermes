@@ -302,6 +302,18 @@ export class HermesCard extends LitElement
 
     private stageScrollY = 0;
 
+    //Sticky ping ids per strip. Once the cursor hits a ping, we
+    //pin the tooltip to that ping's id and keep showing its info
+    //even as the ping slides leftward away from the cursor; the
+    //tooltip is released only when the cursor leaves the canvas
+    //(or, for the stage, drifts vertically out of the ping's
+    //lane). Without this, a ping moving at ~30 px/s slips out of
+    //the hit zone in under a second and the tooltip flickers off
+    //even though the user is still hovering "the same place".
+    //Zero means "no current lock".
+    private _stickyStagePingId  = 0;
+    private _stickyGlobalPingId = 0;
+
     //Backing-store sizes, in CSS px, recomputed by the resize
     //observer.
     private stageW = 0;
@@ -820,6 +832,7 @@ export class HermesCard extends LitElement
     private handleStageMouseLeave = (): void =>
     {
         this.stageMouse = { x: -1, y: -1 };
+        this._stickyStagePingId = 0;
         this.maybeHideTooltip('stage');
         this.dirty = true;
     };
@@ -846,6 +859,7 @@ export class HermesCard extends LitElement
     private handleGlobalMouseLeave = (): void =>
     {
         this.globalMouse = { x: -1, y: -1 };
+        this._stickyGlobalPingId = 0;
         this.maybeHideTooltip('global');
         this.dirty = true;
     };
@@ -1153,7 +1167,30 @@ export class HermesCard extends LitElement
 
         if (bestHit && this.stageCanvas)
         {
+            //Fresh hit: arm the sticky lock to the new ping so
+            //the tooltip keeps following it as it slides left.
+            this._stickyStagePingId = bestHit.ping.id;
             return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.stageCanvas, false);
+        }
+
+        //No fresh hit. Check the sticky lock: if the cursor is
+        //still over the same lane as the ping we last hovered,
+        //and that ping is still on screen, keep the tooltip
+        //pinned to it at its new (leftward-shifted) position.
+        //This is what stops the tooltip from flickering off
+        //every time a ping slips out from under a stationary
+        //cursor.
+        if (this._stickyStagePingId !== 0 && this.stageMouse.x >= 0 && this.stageCanvas)
+        {
+            const sticky = this.findStickyPing(snapshot.pings, this._stickyStagePingId,
+                                               laneY, now, timespanMs, innerRight, innerWidth);
+            if (sticky)
+            {
+                return this.buildTooltipFromPing(sticky.ping, sticky.x, sticky.y, this.stageCanvas, false);
+            }
+            //The sticky ping is gone or the cursor has wandered
+            //out of its lane; release the lock.
+            this._stickyStagePingId = 0;
         }
 
         //If the cursor is hovering the left gutter (the name or
@@ -1172,6 +1209,37 @@ export class HermesCard extends LitElement
             }
         }
 
+        return null;
+    }
+
+    //Re-locate a sticky ping by id in the current snapshot. The
+    //hit is valid only if the ping is still within the visible
+    //time window AND the cursor is still vertically in its lane
+    //(within ±half a lane pitch of the lane centre). Returns
+    //the ping plus its freshly-computed (x, y) so the renderer
+    //can place the tooltip without re-doing the loop's math.
+    private findStickyPing(
+        pings:       readonly Ping[],
+        stickyId:    number,
+        laneY:       Map<string, { y: number; color: HexColor; lane: Lane }>,
+        now:         number,
+        timespanMs:  number,
+        innerRight:  number,
+        innerWidth:  number
+    ): { ping: Ping; x: number; y: number } | null
+    {
+        for (let i = 0; i < pings.length; i++)
+        {
+            const p = pings[i];
+            if (p.id !== stickyId) continue;
+            const slot = laneY.get(p.entityId);
+            if (!slot) return null;
+            const half = LANE_PITCH / 2;
+            if (Math.abs(this.stageMouse.y - slot.y) > half) return null;
+            const frac = (now - p.ts) / timespanMs;
+            if (frac < 0 || frac > 1) return null;
+            return { ping: p, x: innerRight - frac * innerWidth, y: slot.y };
+        }
         return null;
     }
 
@@ -1258,8 +1326,32 @@ export class HermesCard extends LitElement
 
         if (bestHit && this.globalCanvas)
         {
+            this._stickyGlobalPingId = bestHit.ping.id;
             return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.globalCanvas, true);
         }
+
+        //Sticky fallback: keep the tooltip pinned to the last
+        //hovered ping as it drifts left, until the cursor leaves
+        //the canvas or the ping ages out of the visible window.
+        //The global strip is a single row, so there's no lane
+        //band check - any cursor position on the canvas keeps
+        //the lock alive.
+        if (this._stickyGlobalPingId !== 0 && this.globalMouse.x >= 0 && this.globalCanvas)
+        {
+            for (let i = 0; i < snapshot.pings.length; i++)
+            {
+                const p = snapshot.pings[i];
+                if (p.id !== this._stickyGlobalPingId) continue;
+                const frac = (now - p.ts) / timespanMs;
+                if (frac < 0 || frac > 1) break;
+                const x = innerRight - frac * innerWidth;
+                const h = entityHash(p.entityId);
+                const y = centreY + (h - 0.5) * 2 * Math.max(0, jitterRange);
+                return this.buildTooltipFromPing(p, x, y, this.globalCanvas, true);
+            }
+            this._stickyGlobalPingId = 0;
+        }
+
         return null;
     }
 

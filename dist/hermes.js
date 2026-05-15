@@ -1028,7 +1028,7 @@ function isConnectivityBlip(oldRaw, newRaw) {
 function isMissingState(s2) {
   return s2 === null || s2 === "" || s2 === "unavailable" || s2 === "unknown";
 }
-const HERMES_VERSION = "0.5.2";
+const HERMES_VERSION = "0.5.3";
 const hermesCardStyles = i$3`
     :host
     {
@@ -2422,6 +2422,8 @@ let HermesCard = class extends i {
     this.stageMouse = { x: -1, y: -1 };
     this.globalMouse = { x: -1, y: -1 };
     this.stageScrollY = 0;
+    this._stickyStagePingId = 0;
+    this._stickyGlobalPingId = 0;
     this.stageW = 0;
     this.stageH = 0;
     this.globalW = 0;
@@ -2472,6 +2474,7 @@ let HermesCard = class extends i {
     };
     this.handleStageMouseLeave = () => {
       this.stageMouse = { x: -1, y: -1 };
+      this._stickyStagePingId = 0;
       this.maybeHideTooltip("stage");
       this.dirty = true;
     };
@@ -2492,6 +2495,7 @@ let HermesCard = class extends i {
     };
     this.handleGlobalMouseLeave = () => {
       this.globalMouse = { x: -1, y: -1 };
+      this._stickyGlobalPingId = 0;
       this.maybeHideTooltip("global");
       this.dirty = true;
     };
@@ -3013,7 +3017,23 @@ let HermesCard = class extends i {
     }
     ctx.restore();
     if (bestHit && this.stageCanvas) {
+      this._stickyStagePingId = bestHit.ping.id;
       return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.stageCanvas, false);
+    }
+    if (this._stickyStagePingId !== 0 && this.stageMouse.x >= 0 && this.stageCanvas) {
+      const sticky = this.findStickyPing(
+        snapshot.pings,
+        this._stickyStagePingId,
+        laneY,
+        now,
+        timespanMs,
+        innerRight,
+        innerWidth
+      );
+      if (sticky) {
+        return this.buildTooltipFromPing(sticky.ping, sticky.x, sticky.y, this.stageCanvas, false);
+      }
+      this._stickyStagePingId = 0;
     }
     if (gutterW > 0 && this.stageMouse.x >= 0 && this.stageMouse.x < gutterW && this.stageCanvas) {
       for (const slot of laneY.values()) {
@@ -3022,6 +3042,26 @@ let HermesCard = class extends i {
           return this.buildTooltipFromLane(slot.lane, this.stageMouse.x, slot.y, this.stageCanvas);
         }
       }
+    }
+    return null;
+  }
+  //Re-locate a sticky ping by id in the current snapshot. The
+  //hit is valid only if the ping is still within the visible
+  //time window AND the cursor is still vertically in its lane
+  //(within ±half a lane pitch of the lane centre). Returns
+  //the ping plus its freshly-computed (x, y) so the renderer
+  //can place the tooltip without re-doing the loop's math.
+  findStickyPing(pings, stickyId, laneY, now, timespanMs, innerRight, innerWidth) {
+    for (let i2 = 0; i2 < pings.length; i2++) {
+      const p2 = pings[i2];
+      if (p2.id !== stickyId) continue;
+      const slot = laneY.get(p2.entityId);
+      if (!slot) return null;
+      const half = LANE_PITCH / 2;
+      if (Math.abs(this.stageMouse.y - slot.y) > half) return null;
+      const frac = (now - p2.ts) / timespanMs;
+      if (frac < 0 || frac > 1) return null;
+      return { ping: p2, x: innerRight - frac * innerWidth, y: slot.y };
     }
     return null;
   }
@@ -3074,7 +3114,21 @@ let HermesCard = class extends i {
     }
     ctx.restore();
     if (bestHit && this.globalCanvas) {
+      this._stickyGlobalPingId = bestHit.ping.id;
       return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.globalCanvas, true);
+    }
+    if (this._stickyGlobalPingId !== 0 && this.globalMouse.x >= 0 && this.globalCanvas) {
+      for (let i2 = 0; i2 < snapshot.pings.length; i2++) {
+        const p2 = snapshot.pings[i2];
+        if (p2.id !== this._stickyGlobalPingId) continue;
+        const frac = (now - p2.ts) / timespanMs;
+        if (frac < 0 || frac > 1) break;
+        const x2 = innerRight - frac * innerWidth;
+        const h2 = entityHash(p2.entityId);
+        const y3 = centreY + (h2 - 0.5) * 2 * Math.max(0, jitterRange);
+        return this.buildTooltipFromPing(p2, x2, y3, this.globalCanvas, true);
+      }
+      this._stickyGlobalPingId = 0;
     }
     return null;
   }
