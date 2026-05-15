@@ -62,11 +62,13 @@ if (!window.customCards.some(c => c.type === 'hermes-mini-card'))
     });
 }
 
-//Install banner, same shape and dimensions as the Helios one so
-//the two cards line up visually when both are loaded on the same
-//dashboard. The caduceus glyph (☤ U+2624) sits in the same
-//"Miscellaneous Symbols" block as Helios's ☀, so browsers render
-//it as a monochrome text dingbat rather than a chunky emoji.
+//Install banner. The `❖` glyph (U+2756 BLACK DIAMOND MINUS
+//WHITE X) sits in the Dingbats block, which has near-universal
+//font coverage across browsers and OSes - including the macOS
+//and Linux console fonts where rarer Misc-Symbols glyphs render
+//as a tofu fallback. Keeps the banner rendering as a monochrome
+//text shape (not a chunky emoji) so the two-chip layout stays
+//visually tidy.
 {
     const flagKey = '__hermesBannerPrinted';
     const w = window as unknown as Record<string, unknown>;
@@ -76,12 +78,12 @@ if (!window.customCards.some(c => c.type === 'hermes-mini-card'))
         const labelStyle   = 'background:#8b5cf6;color:#1f2937;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;';
         const versionStyle = 'background:#1f2937;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;';
         console.info(
-            `%c☤ HERMES%c v${HERMES_VERSION}`,
+            `%c❖ HERMES%c v${HERMES_VERSION}`,
             labelStyle,
             versionStyle
         );
         console.info(
-            `%c☤ HERMES%c watching every entity state change on this dashboard`,
+            `%c❖ HERMES%c watching every entity state change on this dashboard`,
             labelStyle,
             'color:#6b7280;font-style:italic;'
         );
@@ -92,9 +94,9 @@ if (!window.customCards.some(c => c.type === 'hermes-mini-card'))
 //has a sensible default. The visual editor mirrors this list.
 //
 //`height` is intentionally absent: the card stretches to fill
-//whatever its container hands it, matching Helios. Users size
-//Hermes via the sections grid / masonry / panel layout in HA
-//itself, not from the card YAML.
+//whatever its container hands it. Users size Hermes via the
+//sections grid / masonry / panel layout in HA itself, not from
+//the card YAML.
 //
 //`type` accepts both the full card (`custom:hermes-card`) and the
 //mini variant (`custom:hermes-mini-card`). The mini variant is a
@@ -252,6 +254,7 @@ export class HermesCard extends LitElement
     private stageEl: HTMLDivElement | null = null;
     private stageCanvas: HTMLCanvasElement | null = null;
     private stageCtx: CanvasRenderingContext2D | null = null;
+    private scrollEl: HTMLDivElement | null = null;
     private globalEl: HTMLDivElement | null = null;
     private globalCanvas: HTMLCanvasElement | null = null;
     private globalCtx: CanvasRenderingContext2D | null = null;
@@ -390,6 +393,16 @@ export class HermesCard extends LitElement
     {
         super.connectedCallback();
 
+        //Reflect the variant onto a host attribute so the
+        //scoped CSS can target the mini card directly (smaller
+        //min-height on ha-card, denser header padding, ...)
+        //without forcing every rule to thread a class through
+        //two levels of shadow root.
+        if (this.isMini)
+        {
+            this.setAttribute('data-mini', '');
+        }
+
         if (typeof navigator !== 'undefined')
         {
             this._i18n = pickTranslations(navigator.language);
@@ -424,9 +437,22 @@ export class HermesCard extends LitElement
         if (!this.stageEl)
         {
             this.stageEl = this.renderRoot.querySelector('.stage') as HTMLDivElement | null;
-            if (this.stageEl)
+        }
+        if (!this.scrollEl)
+        {
+            this.scrollEl = this.renderRoot.querySelector('.stage-scroll-layer') as HTMLDivElement | null;
+            if (this.scrollEl)
             {
-                this.stageEl.addEventListener('scroll', this.handleScroll, { passive: true });
+                //All pointer events for the stage land on the
+                //scroll overlay - the canvas underneath has
+                //`pointer-events: none` so the wheel / touch /
+                //mouse always reach the scroller cleanly.
+                this.scrollEl.addEventListener('scroll', this.handleScroll, { passive: true });
+                this.scrollEl.addEventListener('mousemove', this.handleStageMouseMove);
+                this.scrollEl.addEventListener('mouseleave', this.handleStageMouseLeave);
+                this.scrollEl.addEventListener('touchstart', this.handleStageTouch, { passive: true });
+                this.scrollEl.addEventListener('touchmove', this.handleStageTouch, { passive: true });
+                this.scrollEl.addEventListener('touchend', this.handleStageMouseLeave);
             }
         }
         if (!this.spacerEl)
@@ -435,15 +461,10 @@ export class HermesCard extends LitElement
         }
         if (!this.stageCanvas)
         {
-            this.stageCanvas = this.renderRoot.querySelector('.stage-pin canvas') as HTMLCanvasElement | null;
+            this.stageCanvas = this.renderRoot.querySelector('.stage-canvas-layer canvas') as HTMLCanvasElement | null;
             if (this.stageCanvas)
             {
                 this.stageCtx = this.stageCanvas.getContext('2d', { alpha: true });
-                this.stageCanvas.addEventListener('mousemove', this.handleStageMouseMove);
-                this.stageCanvas.addEventListener('mouseleave', this.handleStageMouseLeave);
-                this.stageCanvas.addEventListener('touchstart', this.handleStageTouch, { passive: true });
-                this.stageCanvas.addEventListener('touchmove', this.handleStageTouch, { passive: true });
-                this.stageCanvas.addEventListener('touchend', this.handleStageMouseLeave);
             }
         }
         if (!this.globalEl)
@@ -542,10 +563,12 @@ export class HermesCard extends LitElement
                     ` : nothing}
 
                     <div class="stage">
-                        <div class="stage-pin">
+                        <div class="stage-canvas-layer">
                             <canvas></canvas>
                         </div>
-                        <div class="stage-spacer"></div>
+                        <div class="stage-scroll-layer">
+                            <div class="stage-spacer"></div>
+                        </div>
                     </div>
 
                     ${this._entityCount === 0 ? this.renderEmpty() : nothing}
@@ -689,15 +712,21 @@ export class HermesCard extends LitElement
 
     private handleScroll = (): void =>
     {
-        if (!this.stageEl) return;
-        this.stageScrollY = this.stageEl.scrollTop;
+        if (!this.scrollEl) return;
+        this.stageScrollY = this.scrollEl.scrollTop;
         this.dirty = true;
     };
 
     private handleStageMouseMove = (ev: MouseEvent): void =>
     {
-        if (!this.stageCanvas) return;
-        const r = this.stageCanvas.getBoundingClientRect();
+        //Mouse coords are taken relative to the canvas (which
+        //fills the same box as the scroll layer thanks to inset:
+        //0). Computing against the canvas keeps the hit-test
+        //consistent even if the scroll layer happens to be a
+        //pixel off from the canvas during a resize.
+        const target = this.stageCanvas ?? this.scrollEl;
+        if (!target) return;
+        const r = target.getBoundingClientRect();
         this.stageMouse = { x: ev.clientX - r.left, y: ev.clientY - r.top };
         this.dirty = true;
     };
@@ -711,9 +740,11 @@ export class HermesCard extends LitElement
 
     private handleStageTouch = (ev: TouchEvent): void =>
     {
-        if (!ev.touches.length || !this.stageCanvas) return;
+        if (!ev.touches.length) return;
+        const target = this.stageCanvas ?? this.scrollEl;
+        if (!target) return;
         const t = ev.touches[0];
-        const r = this.stageCanvas.getBoundingClientRect();
+        const r = target.getBoundingClientRect();
         this.stageMouse = { x: t.clientX - r.left, y: t.clientY - r.top };
         this.dirty = true;
     };
@@ -776,17 +807,14 @@ export class HermesCard extends LitElement
             this.resizeObserver.disconnect();
             this.resizeObserver = null;
         }
-        if (this.stageEl)
+        if (this.scrollEl)
         {
-            this.stageEl.removeEventListener('scroll', this.handleScroll);
-        }
-        if (this.stageCanvas)
-        {
-            this.stageCanvas.removeEventListener('mousemove', this.handleStageMouseMove);
-            this.stageCanvas.removeEventListener('mouseleave', this.handleStageMouseLeave);
-            this.stageCanvas.removeEventListener('touchstart', this.handleStageTouch);
-            this.stageCanvas.removeEventListener('touchmove', this.handleStageTouch);
-            this.stageCanvas.removeEventListener('touchend', this.handleStageMouseLeave);
+            this.scrollEl.removeEventListener('scroll', this.handleScroll);
+            this.scrollEl.removeEventListener('mousemove', this.handleStageMouseMove);
+            this.scrollEl.removeEventListener('mouseleave', this.handleStageMouseLeave);
+            this.scrollEl.removeEventListener('touchstart', this.handleStageTouch);
+            this.scrollEl.removeEventListener('touchmove', this.handleStageTouch);
+            this.scrollEl.removeEventListener('touchend', this.handleStageMouseLeave);
         }
         if (this.globalCanvas)
         {
@@ -956,8 +984,11 @@ export class HermesCard extends LitElement
             const x = innerRight - frac * innerWidth;
             const y = slot.y;
 
-            const baseR = LANE_INNER * 0.34;
-            const r = Math.max(2.5, baseR * (0.5 + p.magnitude * 0.6));
+            //Slightly larger than the previous "body + halo"
+            //design: with the halo gone, the disc itself has to
+            //carry the visual weight.
+            const baseR = LANE_INNER * 0.42;
+            const r = Math.max(3, baseR * (0.55 + p.magnitude * 0.65));
 
             const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
             const alpha = 1 - tailFrac;
@@ -1017,8 +1048,10 @@ export class HermesCard extends LitElement
         const now = snapshot.now;
 
         //Cap on radius reserves a margin below the strip edges.
-        const maxR = Math.min(14, (this.globalH - GLOBAL_INNER_PAD * 2) * 0.45);
-        const baseR = 1.8;
+        //Bumped a little versus the original halo-based design
+        //since the disc now has to read on its own.
+        const maxR = Math.min(18, (this.globalH - GLOBAL_INNER_PAD * 2) * 0.48);
+        const baseR = 2.4;
         const jitterRange = (this.globalH / 2) - GLOBAL_INNER_PAD - maxR;
         const centreY = this.globalH / 2;
 
@@ -1040,10 +1073,10 @@ export class HermesCard extends LitElement
             const y = centreY + (h - 0.5) * 2 * Math.max(0, jitterRange);
 
             //Radius scales with the ping ordinal: every new ping
-            //for an entity gets a slightly larger sphere than the
+            //for an entity gets a slightly larger disc than the
             //previous, up to maxR. Log scale so a sensor pinging
             //a thousand times doesn't dominate.
-            const r = Math.min(maxR, baseR + Math.log2(p.pingIndex + 1) * 1.6);
+            const r = Math.min(maxR, baseR + Math.log2(p.pingIndex + 1) * 1.85);
 
             const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
             const alpha = 1 - tailFrac;
@@ -1155,27 +1188,19 @@ export class HermesCard extends LitElement
         alpha: number
     ): void
     {
-        const haloR = r * 2.8;
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, haloR);
-        gradient.addColorStop(0,    withAlpha(color, 0.55 * alpha));
-        gradient.addColorStop(0.35, withAlpha(color, 0.20 * alpha));
+        //One flat disc, no specular highlight, no additive halo.
+        //A single radial gradient from solid-ish at the centre to
+        //full transparency at the rim gives the soft edge the
+        //design calls for - the disc reads as a coloured dot
+        //fading into the background, not a 3D sphere.
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
+        gradient.addColorStop(0,    withAlpha(color, 0.80 * alpha));
+        gradient.addColorStop(0.55, withAlpha(color, 0.55 * alpha));
         gradient.addColorStop(1,    withAlpha(color, 0));
 
-        ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(x, y, haloR, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalCompositeOperation = 'source-over';
-
-        ctx.fillStyle = withAlpha(color, 0.95 * alpha);
-        ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.65 * alpha})`;
-        ctx.beginPath();
-        ctx.arc(x - r * 0.25, y - r * 0.25, Math.max(0.6, r * 0.18), 0, Math.PI * 2);
         ctx.fill();
     }
 

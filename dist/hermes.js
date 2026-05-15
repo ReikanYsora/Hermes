@@ -1020,7 +1020,7 @@ function isConnectivityBlip(oldRaw, newRaw) {
 function isMissingState(s2) {
   return s2 === null || s2 === "" || s2 === "unavailable" || s2 === "unknown";
 }
-const HERMES_VERSION = "0.3.0";
+const HERMES_VERSION = "0.4.0";
 const hermesCardStyles = i$3`
     :host
     {
@@ -1047,6 +1047,29 @@ const hermesCardStyles = i$3`
         box-shadow:
             inset 0 0 0 1px var(--hermes-card-inset, rgba(255, 255, 255, 0.03)),
             inset 0 -40px 80px -40px var(--hermes-card-vignette, rgba(0, 0, 0, 0.6));
+    }
+
+    /*  Mini variant.
+        The host gets a data-mini attribute in connectedCallback.
+        Two things change versus the full card:
+          - ha-card's min-height drops from 220 px to ~90 px so
+            the card-picker preview cells and the sections-grid
+            small slots don't overflow (this was what made the
+            HA catalogue go haywire when both cards were
+            registered).
+          - The header tightens its padding so the card stays a
+            slim strip when the user shrinks it down to one row.
+        Everything else (height: 100 % cascade, flex layout)
+        stays identical, so the strip still fills its container
+        when there's room. */
+    :host([data-mini]) ha-card
+    {
+        min-height: 90px;
+    }
+
+    :host([data-mini]) .header
+    {
+        padding: 8px 14px 4px 14px;
     }
 
     .root
@@ -1183,7 +1206,11 @@ const hermesCardStyles = i$3`
     .global.mini
     {
         flex: 1 1 auto;
-        min-height: 0;
+        /*  Reserve a baseline so the canvas always has somewhere
+            to paint, even when ha-card's parent gives us zero
+            height (e.g. inside the HA card-picker preview cell
+            before it has measured us). */
+        min-height: 50px;
     }
 
     .root.mini .header
@@ -1214,61 +1241,76 @@ const hermesCardStyles = i$3`
         margin: 0 12px;
     }
 
-    /*  Main stage. Scrolls vertically once the entity count
-        exceeds the visible height. The canvas inside uses
-        position:sticky so it stays pinned to the top of the
-        viewport while the inner spacer pushes the scrollbar to
-        expose the rest of the lanes - we render lanes with a
-        scrollTop offset, so only the visible window is painted
-        regardless of how tall the virtual content gets. */
+    /*  Main stage.
+        Two stacked layers, both filling the stage box:
+          - .stage-canvas-layer: an absolutely-positioned canvas,
+            painted to the visible viewport, with pointer-events:
+            none so it never swallows scroll wheel / touch / mouse
+            events headed for the layer above.
+          - .stage-scroll-layer: an overlay scroll container with
+            overflow-y:auto, holding a single tall spacer that
+            drives the scrollbar. All pointer events land here;
+            the card translates the scrollTop into a render
+            offset on the canvas below.
+        This split is what the previous sticky-canvas approach
+        was simulating, with none of the platform quirks that
+        sometimes prevented vertical wheeling from kicking the
+        scroll container. */
     .stage
     {
         flex: 1 1 auto;
         position: relative;
         width: 100%;
         min-height: 0;
+    }
+
+    .stage-canvas-layer
+    {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+    }
+
+    .stage-canvas-layer canvas
+    {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+
+    .stage-scroll-layer
+    {
+        position: absolute;
+        inset: 0;
         overflow-y: auto;
         overflow-x: hidden;
         scrollbar-width: thin;
         scrollbar-color: var(--hermes-scrollbar) transparent;
+        /*  Tell touch UAs that vertical pan is the only gesture
+            we want; the canvas hit-tests itself for hover, no
+            need for pinch-zoom / horizontal swipe defaults. */
+        touch-action: pan-y;
     }
 
-    .stage::-webkit-scrollbar
+    .stage-scroll-layer::-webkit-scrollbar
     {
         width: 8px;
     }
 
-    .stage::-webkit-scrollbar-track
+    .stage-scroll-layer::-webkit-scrollbar-track
     {
         background: transparent;
     }
 
-    .stage::-webkit-scrollbar-thumb
+    .stage-scroll-layer::-webkit-scrollbar-thumb
     {
         background: var(--hermes-scrollbar);
         border-radius: 6px;
     }
 
-    .stage::-webkit-scrollbar-thumb:hover
+    .stage-scroll-layer::-webkit-scrollbar-thumb:hover
     {
         background: var(--hermes-scrollbar-hov);
-    }
-
-    .stage-pin
-    {
-        position: sticky;
-        top: 0;
-        width: 100%;
-        height: 100%;
-    }
-
-    .stage-pin canvas
-    {
-        display: block;
-        width: 100%;
-        height: 100%;
-        position: absolute;
-        inset: 0;
     }
 
     .stage-spacer
@@ -2161,12 +2203,12 @@ if (!window.customCards.some((c2) => c2.type === "hermes-mini-card")) {
     const labelStyle = "background:#8b5cf6;color:#1f2937;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;";
     const versionStyle = "background:#1f2937;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;";
     console.info(
-      `%c☤ HERMES%c v${HERMES_VERSION}`,
+      `%c❖ HERMES%c v${HERMES_VERSION}`,
       labelStyle,
       versionStyle
     );
     console.info(
-      `%c☤ HERMES%c watching every entity state change on this dashboard`,
+      `%c❖ HERMES%c watching every entity state change on this dashboard`,
       labelStyle,
       "color:#6b7280;font-style:italic;"
     );
@@ -2223,6 +2265,7 @@ let HermesCard = class extends i {
     this.stageEl = null;
     this.stageCanvas = null;
     this.stageCtx = null;
+    this.scrollEl = null;
     this.globalEl = null;
     this.globalCanvas = null;
     this.globalCtx = null;
@@ -2270,13 +2313,14 @@ let HermesCard = class extends i {
       this.dirty = true;
     };
     this.handleScroll = () => {
-      if (!this.stageEl) return;
-      this.stageScrollY = this.stageEl.scrollTop;
+      if (!this.scrollEl) return;
+      this.stageScrollY = this.scrollEl.scrollTop;
       this.dirty = true;
     };
     this.handleStageMouseMove = (ev) => {
-      if (!this.stageCanvas) return;
-      const r2 = this.stageCanvas.getBoundingClientRect();
+      const target = this.stageCanvas ?? this.scrollEl;
+      if (!target) return;
+      const r2 = target.getBoundingClientRect();
       this.stageMouse = { x: ev.clientX - r2.left, y: ev.clientY - r2.top };
       this.dirty = true;
     };
@@ -2286,9 +2330,11 @@ let HermesCard = class extends i {
       this.dirty = true;
     };
     this.handleStageTouch = (ev) => {
-      if (!ev.touches.length || !this.stageCanvas) return;
+      if (!ev.touches.length) return;
+      const target = this.stageCanvas ?? this.scrollEl;
+      if (!target) return;
       const t2 = ev.touches[0];
-      const r2 = this.stageCanvas.getBoundingClientRect();
+      const r2 = target.getBoundingClientRect();
       this.stageMouse = { x: t2.clientX - r2.left, y: t2.clientY - r2.top };
       this.dirty = true;
     };
@@ -2391,6 +2437,9 @@ let HermesCard = class extends i {
   //----- lifecycle -----
   connectedCallback() {
     super.connectedCallback();
+    if (this.isMini) {
+      this.setAttribute("data-mini", "");
+    }
     if (typeof navigator !== "undefined") {
       this._i18n = pickTranslations(navigator.language);
     }
@@ -2413,22 +2462,25 @@ let HermesCard = class extends i {
     }
     if (!this.stageEl) {
       this.stageEl = this.renderRoot.querySelector(".stage");
-      if (this.stageEl) {
-        this.stageEl.addEventListener("scroll", this.handleScroll, { passive: true });
+    }
+    if (!this.scrollEl) {
+      this.scrollEl = this.renderRoot.querySelector(".stage-scroll-layer");
+      if (this.scrollEl) {
+        this.scrollEl.addEventListener("scroll", this.handleScroll, { passive: true });
+        this.scrollEl.addEventListener("mousemove", this.handleStageMouseMove);
+        this.scrollEl.addEventListener("mouseleave", this.handleStageMouseLeave);
+        this.scrollEl.addEventListener("touchstart", this.handleStageTouch, { passive: true });
+        this.scrollEl.addEventListener("touchmove", this.handleStageTouch, { passive: true });
+        this.scrollEl.addEventListener("touchend", this.handleStageMouseLeave);
       }
     }
     if (!this.spacerEl) {
       this.spacerEl = this.renderRoot.querySelector(".stage-spacer");
     }
     if (!this.stageCanvas) {
-      this.stageCanvas = this.renderRoot.querySelector(".stage-pin canvas");
+      this.stageCanvas = this.renderRoot.querySelector(".stage-canvas-layer canvas");
       if (this.stageCanvas) {
         this.stageCtx = this.stageCanvas.getContext("2d", { alpha: true });
-        this.stageCanvas.addEventListener("mousemove", this.handleStageMouseMove);
-        this.stageCanvas.addEventListener("mouseleave", this.handleStageMouseLeave);
-        this.stageCanvas.addEventListener("touchstart", this.handleStageTouch, { passive: true });
-        this.stageCanvas.addEventListener("touchmove", this.handleStageTouch, { passive: true });
-        this.stageCanvas.addEventListener("touchend", this.handleStageMouseLeave);
       }
     }
     if (!this.globalEl) {
@@ -2508,10 +2560,12 @@ let HermesCard = class extends i {
                     ` : A}
 
                     <div class="stage">
-                        <div class="stage-pin">
+                        <div class="stage-canvas-layer">
                             <canvas></canvas>
                         </div>
-                        <div class="stage-spacer"></div>
+                        <div class="stage-scroll-layer">
+                            <div class="stage-spacer"></div>
+                        </div>
                     </div>
 
                     ${this._entityCount === 0 ? this.renderEmpty() : A}
@@ -2610,15 +2664,13 @@ let HermesCard = class extends i {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
-    if (this.stageEl) {
-      this.stageEl.removeEventListener("scroll", this.handleScroll);
-    }
-    if (this.stageCanvas) {
-      this.stageCanvas.removeEventListener("mousemove", this.handleStageMouseMove);
-      this.stageCanvas.removeEventListener("mouseleave", this.handleStageMouseLeave);
-      this.stageCanvas.removeEventListener("touchstart", this.handleStageTouch);
-      this.stageCanvas.removeEventListener("touchmove", this.handleStageTouch);
-      this.stageCanvas.removeEventListener("touchend", this.handleStageMouseLeave);
+    if (this.scrollEl) {
+      this.scrollEl.removeEventListener("scroll", this.handleScroll);
+      this.scrollEl.removeEventListener("mousemove", this.handleStageMouseMove);
+      this.scrollEl.removeEventListener("mouseleave", this.handleStageMouseLeave);
+      this.scrollEl.removeEventListener("touchstart", this.handleStageTouch);
+      this.scrollEl.removeEventListener("touchmove", this.handleStageTouch);
+      this.scrollEl.removeEventListener("touchend", this.handleStageMouseLeave);
     }
     if (this.globalCanvas) {
       this.globalCanvas.removeEventListener("mousemove", this.handleGlobalMouseMove);
@@ -2725,8 +2777,8 @@ let HermesCard = class extends i {
       if (frac < 0 || frac > 1) continue;
       const x2 = innerRight - frac * innerWidth;
       const y3 = slot.y;
-      const baseR = LANE_INNER * 0.34;
-      const r2 = Math.max(2.5, baseR * (0.5 + p2.magnitude * 0.6));
+      const baseR = LANE_INNER * 0.42;
+      const r2 = Math.max(3, baseR * (0.55 + p2.magnitude * 0.65));
       const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
       const alpha = 1 - tailFrac;
       this.drawPing(ctx, x2, y3, r2, p2.color, alpha);
@@ -2766,8 +2818,8 @@ let HermesCard = class extends i {
     const innerWidth = Math.max(0, innerRight - innerLeft);
     const timespanMs = Math.max(500, cfg.globalTimespanSeconds * 1e3);
     const now = snapshot.now;
-    const maxR = Math.min(14, (this.globalH - GLOBAL_INNER_PAD * 2) * 0.45);
-    const baseR = 1.8;
+    const maxR = Math.min(18, (this.globalH - GLOBAL_INNER_PAD * 2) * 0.48);
+    const baseR = 2.4;
     const jitterRange = this.globalH / 2 - GLOBAL_INNER_PAD - maxR;
     const centreY = this.globalH / 2;
     let bestHit = null;
@@ -2779,7 +2831,7 @@ let HermesCard = class extends i {
       const x2 = innerRight - frac * innerWidth;
       const h2 = entityHash(p2.entityId);
       const y3 = centreY + (h2 - 0.5) * 2 * Math.max(0, jitterRange);
-      const r2 = Math.min(maxR, baseR + Math.log2(p2.pingIndex + 1) * 1.6);
+      const r2 = Math.min(maxR, baseR + Math.log2(p2.pingIndex + 1) * 1.85);
       const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
       const alpha = 1 - tailFrac;
       this.drawPing(ctx, x2, y3, r2, p2.color, alpha);
@@ -2846,24 +2898,13 @@ let HermesCard = class extends i {
     }
   }
   drawPing(ctx, x2, y3, r2, color, alpha) {
-    const haloR = r2 * 2.8;
-    const gradient = ctx.createRadialGradient(x2, y3, 0, x2, y3, haloR);
-    gradient.addColorStop(0, withAlpha(color, 0.55 * alpha));
-    gradient.addColorStop(0.35, withAlpha(color, 0.2 * alpha));
+    const gradient = ctx.createRadialGradient(x2, y3, 0, x2, y3, r2);
+    gradient.addColorStop(0, withAlpha(color, 0.8 * alpha));
+    gradient.addColorStop(0.55, withAlpha(color, 0.55 * alpha));
     gradient.addColorStop(1, withAlpha(color, 0));
-    ctx.globalCompositeOperation = "lighter";
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.arc(x2, y3, haloR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = withAlpha(color, 0.95 * alpha);
-    ctx.beginPath();
     ctx.arc(x2, y3, r2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.65 * alpha})`;
-    ctx.beginPath();
-    ctx.arc(x2 - r2 * 0.25, y3 - r2 * 0.25, Math.max(0.6, r2 * 0.18), 0, Math.PI * 2);
     ctx.fill();
   }
   //Translate a (canvas-local) sphere position into a tooltip

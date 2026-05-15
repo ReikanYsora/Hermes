@@ -18,7 +18,7 @@ import { css } from 'lit';
  * The card itself takes 100 % of whatever vertical space its
  * container hands it (masonry, sections grid, panel mode), with a
  * sensible min-height so a freshly-added card never paints into a
- * zero-pixel box. The Helios card follows the same pattern.
+ * zero-pixel box.
  *
  * Theming is done via two sets of CSS custom properties switched
  * on the `.root` element (`.theme-dark` / `.theme-light`). All
@@ -52,6 +52,29 @@ export const hermesCardStyles = css`
         box-shadow:
             inset 0 0 0 1px var(--hermes-card-inset, rgba(255, 255, 255, 0.03)),
             inset 0 -40px 80px -40px var(--hermes-card-vignette, rgba(0, 0, 0, 0.6));
+    }
+
+    /*  Mini variant.
+        The host gets a data-mini attribute in connectedCallback.
+        Two things change versus the full card:
+          - ha-card's min-height drops from 220 px to ~90 px so
+            the card-picker preview cells and the sections-grid
+            small slots don't overflow (this was what made the
+            HA catalogue go haywire when both cards were
+            registered).
+          - The header tightens its padding so the card stays a
+            slim strip when the user shrinks it down to one row.
+        Everything else (height: 100 % cascade, flex layout)
+        stays identical, so the strip still fills its container
+        when there's room. */
+    :host([data-mini]) ha-card
+    {
+        min-height: 90px;
+    }
+
+    :host([data-mini]) .header
+    {
+        padding: 8px 14px 4px 14px;
     }
 
     .root
@@ -188,7 +211,11 @@ export const hermesCardStyles = css`
     .global.mini
     {
         flex: 1 1 auto;
-        min-height: 0;
+        /*  Reserve a baseline so the canvas always has somewhere
+            to paint, even when ha-card's parent gives us zero
+            height (e.g. inside the HA card-picker preview cell
+            before it has measured us). */
+        min-height: 50px;
     }
 
     .root.mini .header
@@ -219,61 +246,76 @@ export const hermesCardStyles = css`
         margin: 0 12px;
     }
 
-    /*  Main stage. Scrolls vertically once the entity count
-        exceeds the visible height. The canvas inside uses
-        position:sticky so it stays pinned to the top of the
-        viewport while the inner spacer pushes the scrollbar to
-        expose the rest of the lanes - we render lanes with a
-        scrollTop offset, so only the visible window is painted
-        regardless of how tall the virtual content gets. */
+    /*  Main stage.
+        Two stacked layers, both filling the stage box:
+          - .stage-canvas-layer: an absolutely-positioned canvas,
+            painted to the visible viewport, with pointer-events:
+            none so it never swallows scroll wheel / touch / mouse
+            events headed for the layer above.
+          - .stage-scroll-layer: an overlay scroll container with
+            overflow-y:auto, holding a single tall spacer that
+            drives the scrollbar. All pointer events land here;
+            the card translates the scrollTop into a render
+            offset on the canvas below.
+        This split is what the previous sticky-canvas approach
+        was simulating, with none of the platform quirks that
+        sometimes prevented vertical wheeling from kicking the
+        scroll container. */
     .stage
     {
         flex: 1 1 auto;
         position: relative;
         width: 100%;
         min-height: 0;
+    }
+
+    .stage-canvas-layer
+    {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+    }
+
+    .stage-canvas-layer canvas
+    {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+
+    .stage-scroll-layer
+    {
+        position: absolute;
+        inset: 0;
         overflow-y: auto;
         overflow-x: hidden;
         scrollbar-width: thin;
         scrollbar-color: var(--hermes-scrollbar) transparent;
+        /*  Tell touch UAs that vertical pan is the only gesture
+            we want; the canvas hit-tests itself for hover, no
+            need for pinch-zoom / horizontal swipe defaults. */
+        touch-action: pan-y;
     }
 
-    .stage::-webkit-scrollbar
+    .stage-scroll-layer::-webkit-scrollbar
     {
         width: 8px;
     }
 
-    .stage::-webkit-scrollbar-track
+    .stage-scroll-layer::-webkit-scrollbar-track
     {
         background: transparent;
     }
 
-    .stage::-webkit-scrollbar-thumb
+    .stage-scroll-layer::-webkit-scrollbar-thumb
     {
         background: var(--hermes-scrollbar);
         border-radius: 6px;
     }
 
-    .stage::-webkit-scrollbar-thumb:hover
+    .stage-scroll-layer::-webkit-scrollbar-thumb:hover
     {
         background: var(--hermes-scrollbar-hov);
-    }
-
-    .stage-pin
-    {
-        position: sticky;
-        top: 0;
-        width: 100%;
-        height: 100%;
-    }
-
-    .stage-pin canvas
-    {
-        display: block;
-        width: 100%;
-        height: 100%;
-        position: absolute;
-        inset: 0;
     }
 
     .stage-spacer

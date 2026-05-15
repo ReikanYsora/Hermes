@@ -6,8 +6,6 @@
 
 **HERMES** is a custom [Home Assistant](https://www.home-assistant.io/) Lovelace card that shows the **pulse of your home** in real time. Every entity state change drops a coloured sphere onto a horizontal timeline that drifts from right to left, so a glance is enough to know what's happening, what just happened, and which corner of your installation is alive.
 
-It's a companion piece to [HELIOS](https://github.com/ReikanYsora/Helios): same minimalist aesthetic, light **or** dark theme, but instead of the sun it watches every sensor you point it at.
-
 Two cards ship in the same bundle:
 
 * **`custom:hermes-card`** — the full activity map: header, global activity strip, divider, scrollable per-entity stage.

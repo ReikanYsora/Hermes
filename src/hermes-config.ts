@@ -1,13 +1,12 @@
 /*
  * Hermes visual editor.
  *
- * Single-column Helios-style layout: each control is a `.field`
- * row with the label on the left and the input / toggle on the
- * right (180 px budget). Section titles in the primary HA colour
- * group the rows. Returned by HermesCard.getConfigElement() and
- * shared by both the full and mini variants — the mini-only
- * card hides the per-entity stage fields below the global strip
- * fields.
+ * Single-column layout: each control is a `.field` row with the
+ * label on the left and the input / toggle on the right (180 px
+ * budget). Section titles in the primary HA colour group the
+ * rows. Returned by HermesCard.getConfigElement() and shared by
+ * both the full and mini variants - the mini-only card hides the
+ * per-entity stage fields below the global strip fields.
  *
  * We dispatch the standard `config-changed` CustomEvent on every
  * input mutation so HA picks the new state up in the live preview.
