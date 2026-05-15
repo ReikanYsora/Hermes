@@ -45,5 +45,8 @@ export const de: Translation =
     editorIgnoreUnavailable: 'Nicht verfügbar / unbekannt ignorieren',
 
     yes: 'Ein',
-    no:  'Aus'
+    no:  'Aus',
+
+    actionPlay:  'Wiedergabe',
+    actionPause: 'Pause'
 };

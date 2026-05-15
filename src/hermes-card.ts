@@ -62,13 +62,14 @@ if (!window.customCards.some(c => c.type === 'hermes-mini-card'))
     });
 }
 
-//Install banner. The `❖` glyph (U+2756 BLACK DIAMOND MINUS
-//WHITE X) sits in the Dingbats block, which has near-universal
-//font coverage across browsers and OSes - including the macOS
-//and Linux console fonts where rarer Misc-Symbols glyphs render
-//as a tofu fallback. Keeps the banner rendering as a monochrome
-//text shape (not a chunky emoji) so the two-chip layout stays
-//visually tidy.
+//Install banner. The `❋` glyph (U+274B HEAVY EIGHT TEARDROP
+//PROPELLER ASTERISK) sits in the Dingbats block: monochrome,
+//near-universal font coverage, and visually rendered at about
+//the same horizontal advance as a wide capital letter, so the
+//"❋ HERMES" left chip lines up width-wise with siblings that
+//use a similarly weighted dingbat. The eight teardrops radiating
+//from the centre also riff on the winged-messenger theme of the
+//card without resorting to an emoji.
 {
     const flagKey = '__hermesBannerPrinted';
     const w = window as unknown as Record<string, unknown>;
@@ -78,12 +79,12 @@ if (!window.customCards.some(c => c.type === 'hermes-mini-card'))
         const labelStyle   = 'background:#8b5cf6;color:#1f2937;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;';
         const versionStyle = 'background:#1f2937;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;';
         console.info(
-            `%c❖ HERMES%c v${HERMES_VERSION}`,
+            `%c❋ HERMES%c v${HERMES_VERSION}`,
             labelStyle,
             versionStyle
         );
         console.info(
-            `%c❖ HERMES%c watching every entity state change on this dashboard`,
+            `%c❋ HERMES%c watching every entity state change on this dashboard`,
             labelStyle,
             'color:#6b7280;font-style:italic;'
         );
@@ -197,6 +198,18 @@ const FADE_TAIL_FRAC   = 0.18;
 const GLOBAL_PAD_X     = 18;
 const GLOBAL_INNER_PAD = 8;      //top/bottom padding inside the global strip
 
+//Maximum replay speed when catching up from a pause. 6x means
+//one minute of pause replays in ten seconds before the timeline
+//snaps back to live. Slow enough that the user can still follow
+//each ping; fast enough to feel responsive.
+const CATCH_UP_SPEED   = 6;
+
+//Below this absolute gap (ms) between renderNow and Date.now()
+//we consider the timeline back at live and stop the fast-
+//forward. Cheap snap so we don't accumulate floating-point
+//drift across long sessions.
+const LIVE_EPSILON_MS  = 60;
+
 //Tooltip width / height estimates used for viewport clamping.
 //These match the CSS min/max budgets in hermes-card-css.ts; if
 //the tooltip overflows in practice (very long entity names),
@@ -244,6 +257,16 @@ export class HermesCard extends LitElement
     @state() private _tooltip: TooltipState = EMPTY_TOOLTIP;
     @state() private _entityCount = 0;
     @state() private _i18n: Translation = _bootI18n;
+    @state() private _paused = false;
+
+    //Renderer-driven time cursor. Normally tracks Date.now(); when
+    //the user pauses, it freezes at the pause instant; when the
+    //user un-pauses with a gap to close, it advances faster than
+    //real time until it catches up. Engine eviction is keyed off
+    //this value, so pings that arrive while paused stay in the
+    //buffer waiting to be replayed.
+    private _renderNow: number = Date.now();
+    private _lastRafTime: number = 0;
 
     private engine: HermesEngine | null = null;
     private engineUnsubscribe: (() => void) | null = null;
@@ -535,6 +558,7 @@ export class HermesCard extends LitElement
                         </div>
                         <div class="global mini">
                             <canvas></canvas>
+                            ${this.renderPlayPauseButton()}
                         </div>
                         ${this._entityCount === 0 ? this.renderEmpty() : nothing}
                         ${tt.visible ? this.renderTooltip(tt) : nothing}
@@ -558,6 +582,7 @@ export class HermesCard extends LitElement
                     ${cfg.showGlobal ? html`
                         <div class="global" style=${`height:${cfg.globalHeight}px;`}>
                             <canvas></canvas>
+                            ${this.renderPlayPauseButton()}
                         </div>
                         <div class="divider"></div>
                     ` : nothing}
@@ -575,6 +600,35 @@ export class HermesCard extends LitElement
                     ${tt.visible ? this.renderTooltip(tt) : nothing}
                 </div>
             </ha-card>
+        `;
+    }
+
+    //Inline SVGs for the play / pause icons. Stroked with
+    //currentColor so they pick up the theme-aware text colour
+    //and stay legible against either background.
+    private renderPlayPauseButton(): TemplateResult
+    {
+        const paused = this._paused;
+        const aria = paused ? this._i18n.actionPlay : this._i18n.actionPause;
+        const icon = paused
+            //Right-pointing triangle.
+            ? html`<svg viewBox="0 0 24 24" aria-hidden="true">
+                       <path d="M8 5 L19 12 L8 19 Z" fill="currentColor" />
+                   </svg>`
+            //Two bars.
+            : html`<svg viewBox="0 0 24 24" aria-hidden="true">
+                       <rect x="7" y="5" width="3.6" height="14" rx="1" fill="currentColor" />
+                       <rect x="13.4" y="5" width="3.6" height="14" rx="1" fill="currentColor" />
+                   </svg>`;
+
+        return html`
+            <button
+                type="button"
+                class="play-pause-btn ${paused ? 'is-paused' : 'is-playing'}"
+                title=${aria}
+                aria-label=${aria}
+                @click=${this.togglePause}
+            >${icon}</button>
         `;
     }
 
@@ -778,12 +832,49 @@ export class HermesCard extends LitElement
     private startRaf(): void
     {
         if (this.rafHandle !== 0) return;
-        const loop = () =>
+        this._lastRafTime = performance.now();
+        const loop = (t: number) =>
         {
             this.rafHandle = requestAnimationFrame(loop);
+            this.advanceRenderTime(t);
             this.paint();
         };
         this.rafHandle = requestAnimationFrame(loop);
+    }
+
+    //Per-frame update of the renderer's time cursor. Three
+    //regimes:
+    //  - paused: cursor frozen. Engine keeps recording, so on
+    //    resume we have everything to replay.
+    //  - catching up: cursor advances at CATCH_UP_SPEED until
+    //    within LIVE_EPSILON_MS of wall-clock time.
+    //  - live: cursor snaps to Date.now() each frame, the most
+    //    accurate reading and the cheapest path.
+    private advanceRenderTime(rafTime: number): void
+    {
+        const dt = Math.max(0, rafTime - this._lastRafTime);
+        this._lastRafTime = rafTime;
+
+        if (this._paused)
+        {
+            return;
+        }
+
+        const realNow = Date.now();
+        const gap = realNow - this._renderNow;
+        if (gap <= LIVE_EPSILON_MS)
+        {
+            this._renderNow = realNow;
+            return;
+        }
+
+        //Catch-up: advance at CATCH_UP_SPEED real-time, clamped
+        //to wall-clock so we never overshoot. dt is the frame's
+        //real-world delta, multiplied by the playback speed to
+        //consume the gap quickly.
+        const next = this._renderNow + dt * CATCH_UP_SPEED;
+        this._renderNow = next >= realNow ? realNow : next;
+        this.dirty = true;
     }
 
     private stopRaf(): void
@@ -799,6 +890,21 @@ export class HermesCard extends LitElement
     {
         this.dirty = true;
     }
+
+    private togglePause = (ev?: Event): void =>
+    {
+        ev?.stopPropagation();
+        this._paused = !this._paused;
+        //Snap the cursor to wall-clock when entering pause so
+        //the freeze instant is unambiguous; the engine keeps
+        //recording, and on resume the catch-up logic in
+        //advanceRenderTime takes over.
+        if (this._paused)
+        {
+            this._renderNow = Date.now();
+        }
+        this.dirty = true;
+    };
 
     private teardownDom(): void
     {
@@ -855,7 +961,10 @@ export class HermesCard extends LitElement
     {
         if (!this.engine) return;
 
-        const snapshot = this.engine.getSnapshot();
+        //Drive the engine's eviction off our own cursor so paused
+        //pings stay in the buffer waiting to be replayed when the
+        //user un-pauses.
+        const snapshot = this.engine.getSnapshot(this._renderNow);
         const hasMotion = snapshot.pings.length > 0;
         if (!hasMotion && !this.dirty) return;
         this.dirty = false;
@@ -1014,6 +1123,23 @@ export class HermesCard extends LitElement
         {
             return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.stageCanvas, false);
         }
+
+        //If the cursor is hovering the left gutter (the name or
+        //value column), surface a lane-info tooltip with the
+        //full friendly name, entity_id and current value - this
+        //is what makes long, clipped entity names readable.
+        if (gutterW > 0 && this.stageMouse.x >= 0 && this.stageMouse.x < gutterW && this.stageCanvas)
+        {
+            for (const slot of laneY.values())
+            {
+                const half = LANE_PITCH / 2;
+                if (Math.abs(this.stageMouse.y - slot.y) <= half)
+                {
+                    return this.buildTooltipFromLane(slot.lane, this.stageMouse.x, slot.y, this.stageCanvas);
+                }
+            }
+        }
+
         return null;
     }
 
@@ -1259,6 +1385,64 @@ export class HermesCard extends LitElement
             ago:         formatAgo(ageMs, this._i18n),
             count:       p.pingIndex,
             color:       p.color
+        };
+    }
+
+    //Lane variant of buildTooltipFromPing: surfaces the full
+    //entity name + current value when the cursor is parked over
+    //the (potentially clipped) label column. Reuses the same
+    //placement / arrow / clamp logic as the ping tooltip so a
+    //hover-and-move from a label onto a ping does not flash the
+    //bubble.
+    private buildTooltipFromLane(
+        lane:         Lane,
+        canvasX:      number,
+        canvasY:      number,
+        sourceCanvas: HTMLCanvasElement
+    ): TooltipState
+    {
+        const rootRect = this.rootEl?.getBoundingClientRect();
+        const canvasRect = sourceCanvas.getBoundingClientRect();
+        const rootW = rootRect?.width  ?? this.stageW;
+        const rootH = rootRect?.height ?? this.stageH;
+
+        const rawX = (canvasRect.left - (rootRect?.left ?? 0)) + canvasX;
+        const rawY = (canvasRect.top  - (rootRect?.top  ?? 0)) + canvasY;
+
+        const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
+        const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
+        const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
+        const arrowOffset = rawX - clampedX;
+
+        const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
+        const fitsBelow  = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
+        const place: 'above' | 'below' = wantsAbove ? 'above' : (fitsBelow ? 'below' : 'above');
+
+        //Use lane.lastPingTs as the "seen" anchor: it's the
+        //timestamp of the most recent change for this entity,
+        //which is what a user reading a hovered label naturally
+        //wants to know ("when did this last move?").
+        const ageMs = Math.max(0, Date.now() - lane.lastPingTs);
+
+        return {
+            visible:     true,
+            x:           Math.round(clampedX),
+            y:           Math.round(rawY),
+            place,
+            arrowOffset: Math.round(arrowOffset),
+            //pingId is reused as an identity key for the
+            //tooltip; we synthesise one from the lane index so
+            //the renderer doesn't think the lane tooltip is the
+            //same as a freshly hovered ping in the same lane.
+            pingId:      -(lane.laneIndex + 1),
+            showCount:   false,
+            name:        lane.friendlyName,
+            entityId:    lane.entityId,
+            value:       formatLaneValue(lane.lastState, lane.unit),
+            previous:    '',
+            ago:         formatAgo(ageMs, this._i18n),
+            count:       lane.pingCount,
+            color:       lane.color
         };
     }
 

@@ -831,8 +831,16 @@ class HermesEngine {
   //One-shot read for the renderer. The returned arrays are the
   //engine's own storage, marked readonly at the type level so
   //the renderer cannot mutate them by accident.
-  getSnapshot() {
-    const now = Date.now();
+  //
+  //`overrideNow` lets the renderer drive its own time cursor
+  //independently of wall-clock time: when the user pauses the
+  //timeline, the renderer freezes its cursor in the past and
+  //passes that value here so eviction does not throw away
+  //pings the user might still want to see, and so paused pings
+  //arriving from the live event bus can later be replayed in
+  //fast-forward.
+  getSnapshot(overrideNow) {
+    const now = overrideNow ?? Date.now();
     const timespanMs = Math.max(1e3, this.cfg.timespan_seconds * 1e3);
     this.evictExpired(now, timespanMs);
     return {
@@ -1020,7 +1028,7 @@ function isConnectivityBlip(oldRaw, newRaw) {
 function isMissingState(s2) {
   return s2 === null || s2 === "" || s2 === "unavailable" || s2 === "unknown";
 }
-const HERMES_VERSION = "0.4.0";
+const HERMES_VERSION = "0.5.0";
 const hermesCardStyles = i$3`
     :host
     {
@@ -1225,6 +1233,70 @@ const hermesCardStyles = i$3`
         height: 100%;
         position: absolute;
         inset: 0;
+    }
+
+    /*  Play / pause button centred on the global strip. Sits on
+        top of the canvas so it's always reachable, but with a
+        translucent background so the pings underneath remain
+        visible. Theme-aware via the existing CSS variables so
+        the disc stays legible on both light and dark surfaces. */
+    .play-pause-btn
+    {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid var(--hermes-rule-strong);
+        background: var(--hermes-tooltip-bg);
+        color: var(--hermes-fg);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font: inherit;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        box-shadow:
+            0 4px 12px rgba(0, 0, 0, 0.25),
+            0 0 0 1px rgba(0, 0, 0, 0.08);
+        transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
+        z-index: 4;
+    }
+
+    .play-pause-btn:hover
+    {
+        transform: translate(-50%, -50%) scale(1.06);
+        border-color: var(--hermes-fg-dim);
+    }
+
+    .play-pause-btn:focus-visible
+    {
+        outline: 2px solid var(--hermes-fg-dim);
+        outline-offset: 2px;
+    }
+
+    .play-pause-btn svg
+    {
+        width: 16px;
+        height: 16px;
+        display: block;
+    }
+
+    /*  Soft pulse on the paused state so the user notices the
+        timeline is frozen even when no pings are flowing. */
+    .play-pause-btn.is-paused
+    {
+        animation: hermes-pause-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes hermes-pause-pulse
+    {
+        0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,0.25), 0 0 0 0   var(--hermes-rule-strong); }
+        50%      { box-shadow: 0 4px 12px rgba(0,0,0,0.25), 0 0 0 6px transparent; }
     }
 
     .divider
@@ -1504,7 +1576,9 @@ const de = {
   editorExcludeDomains: "Ausgeschlossene Domains (kommagetrennt)",
   editorIgnoreUnavailable: "Nicht verfügbar / unbekannt ignorieren",
   yes: "Ein",
-  no: "Aus"
+  no: "Aus",
+  actionPlay: "Wiedergabe",
+  actionPause: "Pause"
 };
 const en = {
   cardName: "Hermes",
@@ -1546,7 +1620,9 @@ const en = {
   editorExcludeDomains: "Excluded domains (comma-separated)",
   editorIgnoreUnavailable: "Ignore unavailable / unknown",
   yes: "On",
-  no: "Off"
+  no: "Off",
+  actionPlay: "Play",
+  actionPause: "Pause"
 };
 const es = {
   cardName: "Hermes",
@@ -1588,7 +1664,9 @@ const es = {
   editorExcludeDomains: "Dominios excluidos (separados por comas)",
   editorIgnoreUnavailable: "Ignorar no disponible / desconocido",
   yes: "Sí",
-  no: "No"
+  no: "No",
+  actionPlay: "Reproducir",
+  actionPause: "Pausa"
 };
 const fr = {
   cardName: "Hermes",
@@ -1630,7 +1708,9 @@ const fr = {
   editorExcludeDomains: "Domaines exclus (séparés par des virgules)",
   editorIgnoreUnavailable: "Ignorer indisponible / inconnu",
   yes: "Oui",
-  no: "Non"
+  no: "Non",
+  actionPlay: "Lecture",
+  actionPause: "Pause"
 };
 const it = {
   cardName: "Hermes",
@@ -1672,7 +1752,9 @@ const it = {
   editorExcludeDomains: "Domini esclusi (separati da virgola)",
   editorIgnoreUnavailable: "Ignora non disponibile / sconosciuto",
   yes: "On",
-  no: "Off"
+  no: "Off",
+  actionPlay: "Riproduci",
+  actionPause: "Pausa"
 };
 const nl = {
   cardName: "Hermes",
@@ -1714,7 +1796,9 @@ const nl = {
   editorExcludeDomains: "Uitgesloten domeinen (komma-gescheiden)",
   editorIgnoreUnavailable: "Niet beschikbaar / onbekend negeren",
   yes: "Aan",
-  no: "Uit"
+  no: "Uit",
+  actionPlay: "Afspelen",
+  actionPause: "Pauze"
 };
 const pt = {
   cardName: "Hermes",
@@ -1756,7 +1840,9 @@ const pt = {
   editorExcludeDomains: "Domínios excluídos (separados por vírgula)",
   editorIgnoreUnavailable: "Ignorar indisponível / desconhecido",
   yes: "Sim",
-  no: "Não"
+  no: "Não",
+  actionPlay: "Reproduzir",
+  actionPause: "Pausa"
 };
 const TABLE = {
   de,
@@ -2203,12 +2289,12 @@ if (!window.customCards.some((c2) => c2.type === "hermes-mini-card")) {
     const labelStyle = "background:#8b5cf6;color:#1f2937;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;";
     const versionStyle = "background:#1f2937;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;";
     console.info(
-      `%c❖ HERMES%c v${HERMES_VERSION}`,
+      `%c❋ HERMES%c v${HERMES_VERSION}`,
       labelStyle,
       versionStyle
     );
     console.info(
-      `%c❖ HERMES%c watching every entity state change on this dashboard`,
+      `%c❋ HERMES%c watching every entity state change on this dashboard`,
       labelStyle,
       "color:#6b7280;font-style:italic;"
     );
@@ -2239,6 +2325,8 @@ const HIT_RADIUS_PAD = 6;
 const FADE_TAIL_FRAC = 0.18;
 const GLOBAL_PAD_X = 18;
 const GLOBAL_INNER_PAD = 8;
+const CATCH_UP_SPEED = 6;
+const LIVE_EPSILON_MS = 60;
 const TOOLTIP_HALF_W = 110;
 const TOOLTIP_H = 110;
 const TOOLTIP_MARGIN = 8;
@@ -2259,6 +2347,9 @@ let HermesCard = class extends i {
     this._tooltip = EMPTY_TOOLTIP;
     this._entityCount = 0;
     this._i18n = _bootI18n;
+    this._paused = false;
+    this._renderNow = Date.now();
+    this._lastRafTime = 0;
     this.engine = null;
     this.engineUnsubscribe = null;
     this.rootEl = null;
@@ -2354,6 +2445,14 @@ let HermesCard = class extends i {
       const t2 = ev.touches[0];
       const r2 = this.globalCanvas.getBoundingClientRect();
       this.globalMouse = { x: t2.clientX - r2.left, y: t2.clientY - r2.top };
+      this.dirty = true;
+    };
+    this.togglePause = (ev) => {
+      ev?.stopPropagation();
+      this._paused = !this._paused;
+      if (this._paused) {
+        this._renderNow = Date.now();
+      }
       this.dirty = true;
     };
   }
@@ -2533,6 +2632,7 @@ let HermesCard = class extends i {
                         </div>
                         <div class="global mini">
                             <canvas></canvas>
+                            ${this.renderPlayPauseButton()}
                         </div>
                         ${this._entityCount === 0 ? this.renderEmpty() : A}
                         ${tt.visible ? this.renderTooltip(tt) : A}
@@ -2555,6 +2655,7 @@ let HermesCard = class extends i {
                     ${cfg.showGlobal ? b`
                         <div class="global" style=${`height:${cfg.globalHeight}px;`}>
                             <canvas></canvas>
+                            ${this.renderPlayPauseButton()}
                         </div>
                         <div class="divider"></div>
                     ` : A}
@@ -2572,6 +2673,28 @@ let HermesCard = class extends i {
                     ${tt.visible ? this.renderTooltip(tt) : A}
                 </div>
             </ha-card>
+        `;
+  }
+  //Inline SVGs for the play / pause icons. Stroked with
+  //currentColor so they pick up the theme-aware text colour
+  //and stay legible against either background.
+  renderPlayPauseButton() {
+    const paused = this._paused;
+    const aria = paused ? this._i18n.actionPlay : this._i18n.actionPause;
+    const icon = paused ? b`<svg viewBox="0 0 24 24" aria-hidden="true">
+                       <path d="M8 5 L19 12 L8 19 Z" fill="currentColor" />
+                   </svg>` : b`<svg viewBox="0 0 24 24" aria-hidden="true">
+                       <rect x="7" y="5" width="3.6" height="14" rx="1" fill="currentColor" />
+                       <rect x="13.4" y="5" width="3.6" height="14" rx="1" fill="currentColor" />
+                   </svg>`;
+    return b`
+            <button
+                type="button"
+                class="play-pause-btn ${paused ? "is-paused" : "is-playing"}"
+                title=${aria}
+                aria-label=${aria}
+                @click=${this.togglePause}
+            >${icon}</button>
         `;
   }
   renderLegend() {
@@ -2644,11 +2767,37 @@ let HermesCard = class extends i {
   //----- animation loop -----
   startRaf() {
     if (this.rafHandle !== 0) return;
-    const loop = () => {
+    this._lastRafTime = performance.now();
+    const loop = (t2) => {
       this.rafHandle = requestAnimationFrame(loop);
+      this.advanceRenderTime(t2);
       this.paint();
     };
     this.rafHandle = requestAnimationFrame(loop);
+  }
+  //Per-frame update of the renderer's time cursor. Three
+  //regimes:
+  //  - paused: cursor frozen. Engine keeps recording, so on
+  //    resume we have everything to replay.
+  //  - catching up: cursor advances at CATCH_UP_SPEED until
+  //    within LIVE_EPSILON_MS of wall-clock time.
+  //  - live: cursor snaps to Date.now() each frame, the most
+  //    accurate reading and the cheapest path.
+  advanceRenderTime(rafTime) {
+    const dt = Math.max(0, rafTime - this._lastRafTime);
+    this._lastRafTime = rafTime;
+    if (this._paused) {
+      return;
+    }
+    const realNow = Date.now();
+    const gap = realNow - this._renderNow;
+    if (gap <= LIVE_EPSILON_MS) {
+      this._renderNow = realNow;
+      return;
+    }
+    const next = this._renderNow + dt * CATCH_UP_SPEED;
+    this._renderNow = next >= realNow ? realNow : next;
+    this.dirty = true;
   }
   stopRaf() {
     if (this.rafHandle !== 0) {
@@ -2702,7 +2851,7 @@ let HermesCard = class extends i {
   }
   paint() {
     if (!this.engine) return;
-    const snapshot = this.engine.getSnapshot();
+    const snapshot = this.engine.getSnapshot(this._renderNow);
     const hasMotion = snapshot.pings.length > 0;
     if (!hasMotion && !this.dirty) return;
     this.dirty = false;
@@ -2795,6 +2944,14 @@ let HermesCard = class extends i {
     ctx.restore();
     if (bestHit && this.stageCanvas) {
       return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.stageCanvas, false);
+    }
+    if (gutterW > 0 && this.stageMouse.x >= 0 && this.stageMouse.x < gutterW && this.stageCanvas) {
+      for (const slot of laneY.values()) {
+        const half = LANE_PITCH / 2;
+        if (Math.abs(this.stageMouse.y - slot.y) <= half) {
+          return this.buildTooltipFromLane(slot.lane, this.stageMouse.x, slot.y, this.stageCanvas);
+        }
+      }
     }
     return null;
   }
@@ -2946,6 +3103,48 @@ let HermesCard = class extends i {
       color: p2.color
     };
   }
+  //Lane variant of buildTooltipFromPing: surfaces the full
+  //entity name + current value when the cursor is parked over
+  //the (potentially clipped) label column. Reuses the same
+  //placement / arrow / clamp logic as the ping tooltip so a
+  //hover-and-move from a label onto a ping does not flash the
+  //bubble.
+  buildTooltipFromLane(lane, canvasX, canvasY, sourceCanvas) {
+    const rootRect = this.rootEl?.getBoundingClientRect();
+    const canvasRect = sourceCanvas.getBoundingClientRect();
+    const rootW = rootRect?.width ?? this.stageW;
+    const rootH = rootRect?.height ?? this.stageH;
+    const rawX = canvasRect.left - (rootRect?.left ?? 0) + canvasX;
+    const rawY = canvasRect.top - (rootRect?.top ?? 0) + canvasY;
+    const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
+    const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
+    const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
+    const arrowOffset = rawX - clampedX;
+    const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
+    const fitsBelow = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
+    const place = wantsAbove ? "above" : fitsBelow ? "below" : "above";
+    const ageMs = Math.max(0, Date.now() - lane.lastPingTs);
+    return {
+      visible: true,
+      x: Math.round(clampedX),
+      y: Math.round(rawY),
+      place,
+      arrowOffset: Math.round(arrowOffset),
+      //pingId is reused as an identity key for the
+      //tooltip; we synthesise one from the lane index so
+      //the renderer doesn't think the lane tooltip is the
+      //same as a freshly hovered ping in the same lane.
+      pingId: -(lane.laneIndex + 1),
+      showCount: false,
+      name: lane.friendlyName,
+      entityId: lane.entityId,
+      value: formatLaneValue(lane.lastState, lane.unit),
+      previous: "",
+      ago: formatAgo(ageMs, this._i18n),
+      count: lane.pingCount,
+      color: lane.color
+    };
+  }
   //When one strip loses the mouse we only drop the tooltip if
   //it was being driven by *that* strip; otherwise we'd flicker
   //away a tooltip the other canvas is actively showing.
@@ -2973,6 +3172,9 @@ __decorateClass([
 __decorateClass([
   r()
 ], HermesCard.prototype, "_i18n", 2);
+__decorateClass([
+  r()
+], HermesCard.prototype, "_paused", 2);
 HermesCard = __decorateClass([
   t("hermes-card")
 ], HermesCard);

@@ -64,6 +64,9 @@ export interface Translation
 
     yes:                 string;
     no:                  string;
+
+    actionPlay:          string;
+    actionPause:         string;
 }
 
 const TABLE: Record<string, Translation> =

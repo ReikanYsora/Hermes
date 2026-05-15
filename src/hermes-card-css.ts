@@ -232,6 +232,70 @@ export const hermesCardStyles = css`
         inset: 0;
     }
 
+    /*  Play / pause button centred on the global strip. Sits on
+        top of the canvas so it's always reachable, but with a
+        translucent background so the pings underneath remain
+        visible. Theme-aware via the existing CSS variables so
+        the disc stays legible on both light and dark surfaces. */
+    .play-pause-btn
+    {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid var(--hermes-rule-strong);
+        background: var(--hermes-tooltip-bg);
+        color: var(--hermes-fg);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font: inherit;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        box-shadow:
+            0 4px 12px rgba(0, 0, 0, 0.25),
+            0 0 0 1px rgba(0, 0, 0, 0.08);
+        transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
+        z-index: 4;
+    }
+
+    .play-pause-btn:hover
+    {
+        transform: translate(-50%, -50%) scale(1.06);
+        border-color: var(--hermes-fg-dim);
+    }
+
+    .play-pause-btn:focus-visible
+    {
+        outline: 2px solid var(--hermes-fg-dim);
+        outline-offset: 2px;
+    }
+
+    .play-pause-btn svg
+    {
+        width: 16px;
+        height: 16px;
+        display: block;
+    }
+
+    /*  Soft pulse on the paused state so the user notices the
+        timeline is frozen even when no pings are flowing. */
+    .play-pause-btn.is-paused
+    {
+        animation: hermes-pause-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes hermes-pause-pulse
+    {
+        0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,0.25), 0 0 0 0   var(--hermes-rule-strong); }
+        50%      { box-shadow: 0 4px 12px rgba(0,0,0,0.25), 0 0 0 6px transparent; }
+    }
+
     .divider
     {
         flex: 0 0 auto;

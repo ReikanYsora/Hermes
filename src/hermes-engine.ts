@@ -305,13 +305,23 @@ export class HermesEngine
     //One-shot read for the renderer. The returned arrays are the
     //engine's own storage, marked readonly at the type level so
     //the renderer cannot mutate them by accident.
-    getSnapshot(): EngineSnapshot
+    //
+    //`overrideNow` lets the renderer drive its own time cursor
+    //independently of wall-clock time: when the user pauses the
+    //timeline, the renderer freezes its cursor in the past and
+    //passes that value here so eviction does not throw away
+    //pings the user might still want to see, and so paused pings
+    //arriving from the live event bus can later be replayed in
+    //fast-forward.
+    getSnapshot(overrideNow?: number): EngineSnapshot
     {
-        const now = Date.now();
+        const now = overrideNow ?? Date.now();
         const timespanMs = Math.max(1000, this.cfg.timespan_seconds * 1000);
 
         //Evict expired pings up-front so the renderer doesn't
-        //have to filter on every paint.
+        //have to filter on every paint. Pings whose ts is in
+        //the future (relative to a frozen `now`) are kept; the
+        //renderer simply does not paint them yet.
         this.evictExpired(now, timespanMs);
 
         return {

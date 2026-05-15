@@ -45,5 +45,8 @@ export const nl: Translation =
     editorIgnoreUnavailable: 'Niet beschikbaar / onbekend negeren',
 
     yes: 'Aan',
-    no:  'Uit'
+    no:  'Uit',
+
+    actionPlay:  'Afspelen',
+    actionPause: 'Pauze'
 };
