@@ -19,6 +19,12 @@ import { css } from 'lit';
  * container hands it (masonry, sections grid, panel mode), with a
  * sensible min-height so a freshly-added card never paints into a
  * zero-pixel box. The Helios card follows the same pattern.
+ *
+ * Theming is done via two sets of CSS custom properties switched
+ * on the `.root` element (`.theme-dark` / `.theme-light`). All
+ * surfaces, including the canvases via JS-side getComputedStyle,
+ * pull their colours from these variables so the user can flip
+ * the card from dark to light without restarting.
  */
 export const hermesCardStyles = css`
     :host
@@ -26,36 +32,15 @@ export const hermesCardStyles = css`
         display: block;
         width:   100%;
         height:  100%;
-
-        --hermes-bg:           #0a0c10;
-        --hermes-bg-grad-1:    #0c0f15;
-        --hermes-bg-grad-2:    #07090c;
-        --hermes-fg:           #e7ecf3;
-        --hermes-fg-dim:       #9aa3b2;
-        --hermes-fg-mute:      #5a6273;
-        --hermes-rule:         rgba(255, 255, 255, 0.06);
-        --hermes-rule-strong:  rgba(255, 255, 255, 0.12);
-        --hermes-tooltip-bg:   rgba(16, 19, 26, 0.92);
-        --hermes-tooltip-bd:   rgba(255, 255, 255, 0.08);
-        --hermes-label-font:
-            ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-            "Inter", "Helvetica Neue", Arial, sans-serif;
-        --hermes-mono-font:
-            ui-monospace, SFMono-Regular, "SF Mono", Menlo,
-            Consolas, "Liberation Mono", monospace;
     }
 
     ha-card
     {
         position: relative;
         overflow: hidden;
-        background: radial-gradient(
-            120% 100% at 60% 0%,
-            var(--hermes-bg-grad-1) 0%,
-            var(--hermes-bg-grad-2) 100%
-        );
+        background: var(--hermes-bg-base, #0a0c10);
         color: var(--hermes-fg);
-        border-radius: var(--ha-card-border-radius, 14px);
+        border-radius: var(--ha-card-border-radius, 12px);
         font-family: var(--hermes-label-font);
         -webkit-font-smoothing: antialiased;
         width:      100%;
@@ -65,8 +50,8 @@ export const hermesCardStyles = css`
             stay scoped to the card. */
         isolation: isolate;
         box-shadow:
-            inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-            inset 0 -40px 80px -40px rgba(0, 0, 0, 0.6);
+            inset 0 0 0 1px var(--hermes-card-inset, rgba(255, 255, 255, 0.03)),
+            inset 0 -40px 80px -40px var(--hermes-card-vignette, rgba(0, 0, 0, 0.6));
     }
 
     .root
@@ -76,6 +61,59 @@ export const hermesCardStyles = css`
         width:          100%;
         height:         100%;
         min-height:     0;
+        position:       relative;
+        background:     var(--hermes-bg-grad, none);
+
+        --hermes-label-font:
+            ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+            "Inter", "Helvetica Neue", Arial, sans-serif;
+        --hermes-mono-font:
+            ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+            Consolas, "Liberation Mono", monospace;
+    }
+
+    /*  --- DARK theme (default) ---------------------------------- */
+    .root.theme-dark
+    {
+        --hermes-bg-base:        #0a0c10;
+        --hermes-bg-grad:        radial-gradient(120% 100% at 60% 0%, #0c0f15 0%, #07090c 100%);
+        --hermes-card-inset:     rgba(255, 255, 255, 0.03);
+        --hermes-card-vignette:  rgba(0, 0, 0, 0.6);
+        --hermes-fg:             #e7ecf3;
+        --hermes-fg-dim:         #9aa3b2;
+        --hermes-fg-mute:        #5a6273;
+        --hermes-rule:           rgba(255, 255, 255, 0.06);
+        --hermes-rule-strong:    rgba(255, 255, 255, 0.12);
+        --hermes-divider-tint:   rgba(255, 255, 255, 0.12);
+        --hermes-tooltip-bg:     rgba(16, 19, 26, 0.92);
+        --hermes-tooltip-bd:     rgba(255, 255, 255, 0.08);
+        --hermes-scrollbar:      rgba(255, 255, 255, 0.14);
+        --hermes-scrollbar-hov:  rgba(255, 255, 255, 0.24);
+        --hermes-midline:        rgba(255, 255, 255, 0.05);
+        --hermes-canvas-text:    rgba(255, 255, 255, 0.62);
+        --hermes-canvas-mute:    rgba(255, 255, 255, 0.38);
+    }
+
+    /*  --- LIGHT theme ------------------------------------------- */
+    .root.theme-light
+    {
+        --hermes-bg-base:        #f3f5f9;
+        --hermes-bg-grad:        radial-gradient(120% 100% at 60% 0%, #ffffff 0%, #eef1f6 100%);
+        --hermes-card-inset:     rgba(0, 0, 0, 0.04);
+        --hermes-card-vignette:  rgba(0, 0, 0, 0.06);
+        --hermes-fg:             #1a1d23;
+        --hermes-fg-dim:         #4a5160;
+        --hermes-fg-mute:        #8b94a5;
+        --hermes-rule:           rgba(0, 0, 0, 0.05);
+        --hermes-rule-strong:    rgba(0, 0, 0, 0.10);
+        --hermes-divider-tint:   rgba(0, 0, 0, 0.10);
+        --hermes-tooltip-bg:     rgba(255, 255, 255, 0.96);
+        --hermes-tooltip-bd:     rgba(0, 0, 0, 0.08);
+        --hermes-scrollbar:      rgba(0, 0, 0, 0.18);
+        --hermes-scrollbar-hov:  rgba(0, 0, 0, 0.32);
+        --hermes-midline:        rgba(0, 0, 0, 0.05);
+        --hermes-canvas-text:    rgba(0, 0, 0, 0.70);
+        --hermes-canvas-mute:    rgba(0, 0, 0, 0.42);
     }
 
     .header
@@ -136,14 +174,26 @@ export const hermesCardStyles = css`
         box-shadow: 0 0 6px currentColor;
     }
 
-    /*  Global timeline strip. Sits just under the header, on its
-        own canvas so the scrolling main stage cannot move it. */
+    /*  Global timeline strip. In normal layout it has a fixed
+        height set inline by the renderer; in mini-card mode it
+        takes the whole available space (the stage is gone). */
     .global
     {
         flex: 0 0 auto;
         position: relative;
         width: 100%;
         overflow: hidden;
+    }
+
+    .global.mini
+    {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .root.mini .header
+    {
+        padding-bottom: 4px;
     }
 
     .global canvas
@@ -162,8 +212,8 @@ export const hermesCardStyles = css`
         background: linear-gradient(
             to right,
             transparent 0%,
-            var(--hermes-rule-strong) 16%,
-            var(--hermes-rule-strong) 84%,
+            var(--hermes-divider-tint) 16%,
+            var(--hermes-divider-tint) 84%,
             transparent 100%
         );
         margin: 0 12px;
@@ -185,7 +235,7 @@ export const hermesCardStyles = css`
         overflow-y: auto;
         overflow-x: hidden;
         scrollbar-width: thin;
-        scrollbar-color: rgba(255,255,255,0.18) transparent;
+        scrollbar-color: var(--hermes-scrollbar) transparent;
     }
 
     .stage::-webkit-scrollbar
@@ -200,13 +250,13 @@ export const hermesCardStyles = css`
 
     .stage::-webkit-scrollbar-thumb
     {
-        background: rgba(255, 255, 255, 0.14);
+        background: var(--hermes-scrollbar);
         border-radius: 6px;
     }
 
     .stage::-webkit-scrollbar-thumb:hover
     {
-        background: rgba(255, 255, 255, 0.24);
+        background: var(--hermes-scrollbar-hov);
     }
 
     .stage-pin
@@ -254,7 +304,6 @@ export const hermesCardStyles = css`
         box-shadow:
             0 8px 24px rgba(0, 0, 0, 0.45),
             0 0 0 1px rgba(0, 0, 0, 0.3);
-        transform: translate(-50%, calc(-100% - 10px));
         opacity: 0;
         transition: opacity 90ms ease-out;
     }
@@ -262,6 +311,20 @@ export const hermesCardStyles = css`
     .tooltip.visible
     {
         opacity: 1;
+    }
+
+    /*  Tooltip placement variants. The transform is what positions
+        the bubble relative to the (x, y) anchor: above the ping
+        by default, below it when the anchor is too close to the
+        top of the card. */
+    .tooltip.above
+    {
+        transform: translate(-50%, calc(-100% - 10px));
+    }
+
+    .tooltip.below
+    {
+        transform: translate(-50%, 14px);
     }
 
     .tooltip .tt-name
@@ -311,14 +374,25 @@ export const hermesCardStyles = css`
     .tooltip .tt-arrow
     {
         position: absolute;
-        bottom: -5px;
-        left: 50%;
+        left: calc(50% + var(--hermes-arrow-offset, 0px));
         transform: translateX(-50%) rotate(45deg);
         width: 8px;
         height: 8px;
         background: var(--hermes-tooltip-bg);
+    }
+
+    .tooltip.above .tt-arrow
+    {
+        bottom: -5px;
         border-right: 1px solid var(--hermes-tooltip-bd);
         border-bottom: 1px solid var(--hermes-tooltip-bd);
+    }
+
+    .tooltip.below .tt-arrow
+    {
+        top: -5px;
+        border-left: 1px solid var(--hermes-tooltip-bd);
+        border-top:  1px solid var(--hermes-tooltip-bd);
     }
 
     .empty

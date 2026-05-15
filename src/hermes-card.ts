@@ -51,21 +51,39 @@ if (!window.customCards.some(c => c.type === 'hermes-card'))
         preview:     true
     });
 }
+if (!window.customCards.some(c => c.type === 'hermes-mini-card'))
+{
+    window.customCards.push(
+    {
+        type:        'hermes-mini-card',
+        name:        _bootI18n.miniCardName,
+        description: _bootI18n.miniCardDescription,
+        preview:     true
+    });
+}
 
-//Install banner, same pattern as Helios. Two flat chips, one
-//bundle per dashboard. Inlined version comes from vite.config.ts.
+//Install banner, same shape and dimensions as the Helios one so
+//the two cards line up visually when both are loaded on the same
+//dashboard. The caduceus glyph (☤ U+2624) sits in the same
+//"Miscellaneous Symbols" block as Helios's ☀, so browsers render
+//it as a monochrome text dingbat rather than a chunky emoji.
 {
     const flagKey = '__hermesBannerPrinted';
     const w = window as unknown as Record<string, unknown>;
     if (!w[flagKey])
     {
         w[flagKey] = true;
-        const labelStyle   = 'background:#8b5cf6;color:#0a0c10;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;';
-        const versionStyle = 'background:#0a0c10;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;';
+        const labelStyle   = 'background:#8b5cf6;color:#1f2937;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;';
+        const versionStyle = 'background:#1f2937;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;';
         console.info(
-            `%c⚡ HERMES%c v${HERMES_VERSION}`,
+            `%c☤ HERMES%c v${HERMES_VERSION}`,
             labelStyle,
             versionStyle
+        );
+        console.info(
+            `%c☤ HERMES%c watching every entity state change on this dashboard`,
+            labelStyle,
+            'color:#6b7280;font-style:italic;'
         );
     }
 }
@@ -77,9 +95,17 @@ if (!window.customCards.some(c => c.type === 'hermes-card'))
 //whatever its container hands it, matching Helios. Users size
 //Hermes via the sections grid / masonry / panel layout in HA
 //itself, not from the card YAML.
+//
+//`type` accepts both the full card (`custom:hermes-card`) and the
+//mini variant (`custom:hermes-mini-card`). The mini variant is a
+//thin subclass that ships in the same bundle: it inherits the
+//engine, the colour palette, the editor and the i18n, but drops
+//the per-entity stage and renders only the global strip. Picking
+//the mini variant in the HA card store is the user-facing toggle.
 export interface HermesCardConfig
 {
-    type:                     'custom:hermes-card';
+    type:                     'custom:hermes-card' | 'custom:hermes-mini-card';
+    card_theme?:              'dark' | 'light';
     title?:                   string;
     timespan_seconds?:        number;
     global_timespan_seconds?: number;
@@ -101,6 +127,7 @@ export interface HermesCardConfig
 interface ResolvedConfig
 {
     title:               string;
+    theme:               'dark' | 'light';
     timespanSeconds:     number;
     globalTimespanSeconds: number;
     globalHeight:        number;
@@ -120,10 +147,12 @@ interface ResolvedConfig
 interface TooltipState
 {
     visible:    boolean;
-    x:          number;     //in .root coords
-    y:          number;
+    x:          number;       //clamped bubble centre, in .root coords
+    y:          number;       //bubble anchor (sphere centre), in .root coords
+    place:      'above' | 'below';  //orientation relative to anchor
+    arrowOffset: number;      //px shift of the arrow from bubble centre
     pingId:     number;
-    showCount:  boolean;    //true when tooltip is sourced from the global strip
+    showCount:  boolean;      //true when tooltip is sourced from the global strip
     name:       string;
     entityId:   string;
     value:      string;
@@ -135,18 +164,20 @@ interface TooltipState
 
 const EMPTY_TOOLTIP: TooltipState =
 {
-    visible:   false,
-    x:         0,
-    y:         0,
-    pingId:    0,
-    showCount: false,
-    name:      '',
-    entityId:  '',
-    value:     '',
-    previous:  '',
-    ago:       '',
-    count:     0,
-    color:     '#94A3B8'
+    visible:     false,
+    x:           0,
+    y:           0,
+    place:       'above',
+    arrowOffset: 0,
+    pingId:      0,
+    showCount:   false,
+    name:        '',
+    entityId:    '',
+    value:       '',
+    previous:    '',
+    ago:         '',
+    count:       0,
+    color:       '#94A3B8'
 };
 
 //Layout constants. The lane pitch is fixed (not stretched to
@@ -163,6 +194,32 @@ const FADE_TAIL_FRAC   = 0.18;
 
 const GLOBAL_PAD_X     = 18;
 const GLOBAL_INNER_PAD = 8;      //top/bottom padding inside the global strip
+
+//Tooltip width / height estimates used for viewport clamping.
+//These match the CSS min/max budgets in hermes-card-css.ts; if
+//the tooltip overflows in practice (very long entity names),
+//`max-width: 280px` in CSS caps the bubble and the arrow stays
+//close to its anchor via the CSS variable below.
+const TOOLTIP_HALF_W   = 110;
+const TOOLTIP_H        = 110;
+const TOOLTIP_MARGIN   = 8;
+
+//Resolved palette for the canvas drawing layer, mirroring the
+//theme CSS variables. Read once per frame from getComputedStyle
+//so flipping the theme reskins the canvas on the next paint.
+interface CanvasPalette
+{
+    text:    string;
+    mute:    string;
+    midline: string;
+}
+
+const DEFAULT_PALETTE: CanvasPalette =
+{
+    text:    'rgba(255,255,255,0.62)',
+    mute:    'rgba(255,255,255,0.38)',
+    midline: 'rgba(255,255,255,0.05)'
+};
 
 //Two-column label gutter geometry. The columns themselves have
 //no visible separator, but their widths are reserved so the value
@@ -235,6 +292,20 @@ export class HermesCard extends LitElement
         };
     }
 
+    //Stub config for the mini variant. Surfaced through
+    //HermesMiniCard.getStubConfig() so the HA card picker
+    //preview matches what the user will actually paint. Public
+    //so the subclass static can call it without going through
+    //a cast.
+    static miniStubConfig(): HermesCardConfig
+    {
+        return {
+            type:                    'custom:hermes-mini-card',
+            title:                   'Activity',
+            global_timespan_seconds: 30
+        };
+    }
+
     setConfig(config: HermesCardConfig | null | undefined): void
     {
         if (!config || typeof config !== 'object')
@@ -273,15 +344,16 @@ export class HermesCard extends LitElement
         this.dirty = true;
     }
 
-    //Masonry sizing. 1 unit ≈ 50 px → 6 ≈ 300 px tall.
+    //Masonry sizing. 1 unit ≈ 50 px → 6 ≈ 300 px for the full
+    //card, 2 ≈ 100 px for the mini variant.
     getCardSize(): number
     {
-        return 6;
+        return this.isMini ? 2 : 6;
     }
 
-    //Sections grid sizing. 1 row ≈ 56 px; we default to 6 rows
-    //(≈ 340 px) at full section width, but allow up to 24 rows
-    //and let the user shrink to a 3-row chip.
+    //Sections grid sizing. 1 row ≈ 56 px. The full card defaults
+    //to 6 rows / full width; the mini variant collapses to a
+    //2-row strip with the same width budget.
     getGridOptions(): {
         rows:        number;
         columns:     number;
@@ -291,6 +363,17 @@ export class HermesCard extends LitElement
         max_columns: number;
     }
     {
+        if (this.isMini)
+        {
+            return {
+                rows:        2,
+                columns:     12,
+                min_rows:    1,
+                max_rows:    4,
+                min_columns: 4,
+                max_columns: 12
+            };
+        }
         return {
             rows:        6,
             columns:     12,
@@ -395,14 +478,53 @@ export class HermesCard extends LitElement
 
     //----- render -----
 
+    //Mini variant flag, dispatched on tag name so a single bundle
+    //ships both <hermes-card> and <hermes-mini-card>. Subclassed
+    //below at end of file with no extra logic - the override here
+    //is enough.
+    protected get isMini(): boolean
+    {
+        return this.tagName.toLowerCase() === 'hermes-mini-card';
+    }
+
     override render(): TemplateResult
     {
         const cfg = this._config;
         const tt = this._tooltip;
+        const themeClass = cfg.theme === 'light' ? 'theme-light' : 'theme-dark';
+        const mini = this.isMini;
+
+        //In mini mode the card collapses to a single horizontal
+        //strip: the global timeline fills 100 % of the available
+        //height and the per-entity stage is dropped entirely. The
+        //user always reaches it from the HA card picker as a
+        //separate <hermes-mini-card> entry.
+        if (mini)
+        {
+            return html`
+                <ha-card>
+                    <div class="root ${themeClass} mini">
+                        <div class="header">
+                            <div class="title">${cfg.title}</div>
+                            <div class="subtitle">
+                                ${this._entityCount} ${this._entityCount === 1 ? this._i18n.entity : this._i18n.entities}
+                            </div>
+                            <div class="spacer"></div>
+                            ${cfg.showLegend ? this.renderLegend() : nothing}
+                        </div>
+                        <div class="global mini">
+                            <canvas></canvas>
+                        </div>
+                        ${this._entityCount === 0 ? this.renderEmpty() : nothing}
+                        ${tt.visible ? this.renderTooltip(tt) : nothing}
+                    </div>
+                </ha-card>
+            `;
+        }
 
         return html`
             <ha-card>
-                <div class="root">
+                <div class="root ${themeClass}">
                     <div class="header">
                         <div class="title">${cfg.title}</div>
                         <div class="subtitle">
@@ -484,10 +606,15 @@ export class HermesCard extends LitElement
 
     private renderTooltip(tt: TooltipState): TemplateResult
     {
+        const placeClass = tt.place === 'below' ? 'below' : 'above';
+        const inlineStyle =
+            `left:${tt.x}px;top:${tt.y}px;` +
+            `border-color:${withAlpha(tt.color, 0.4)};` +
+            `--hermes-arrow-offset:${tt.arrowOffset}px;`;
         return html`
             <div
-                class="tooltip visible"
-                style=${`left:${tt.x}px;top:${tt.y}px;border-color:${withAlpha(tt.color, 0.4)};`}
+                class="tooltip visible ${placeClass}"
+                style=${inlineStyle}
             >
                 <div class="tt-name" style=${`color:${tt.color};`}>${tt.name}</div>
                 <div class="tt-id">${tt.entityId}</div>
@@ -518,28 +645,29 @@ export class HermesCard extends LitElement
 
     private handleResize = (): void =>
     {
-        if (!this.stageEl || !this.stageCanvas || !this.spacerEl) return;
-
         const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
         this.dpr = dpr;
 
-        //Stage canvas: viewport size (sticky inside the scroll
-        //container).
-        const stageRect = this.stageEl.getBoundingClientRect();
-        const sw = Math.max(0, Math.floor(stageRect.width));
-        const sh = Math.max(0, Math.floor(stageRect.height));
-
-        if (sw !== this.stageW || sh !== this.stageH)
+        //Stage canvas: present only in the full card. The
+        //mini-card path has no stage and we silently skip.
+        if (this.stageEl && this.stageCanvas)
         {
-            this.stageW = sw;
-            this.stageH = sh;
-            this.stageCanvas.width  = Math.max(1, Math.floor(sw * dpr));
-            this.stageCanvas.height = Math.max(1, Math.floor(sh * dpr));
-            this.stageCanvas.style.width  = `${sw}px`;
-            this.stageCanvas.style.height = `${sh}px`;
+            const stageRect = this.stageEl.getBoundingClientRect();
+            const sw = Math.max(0, Math.floor(stageRect.width));
+            const sh = Math.max(0, Math.floor(stageRect.height));
+
+            if (sw !== this.stageW || sh !== this.stageH)
+            {
+                this.stageW = sw;
+                this.stageH = sh;
+                this.stageCanvas.width  = Math.max(1, Math.floor(sw * dpr));
+                this.stageCanvas.height = Math.max(1, Math.floor(sh * dpr));
+                this.stageCanvas.style.width  = `${sw}px`;
+                this.stageCanvas.style.height = `${sh}px`;
+            }
         }
 
-        //Global canvas: same width, fixed height from config.
+        //Global canvas: present in both layouts.
         if (this.globalCanvas && this.globalEl)
         {
             const grect = this.globalEl.getBoundingClientRect();
@@ -672,6 +800,29 @@ export class HermesCard extends LitElement
 
     //----- paint -----
 
+    //Palette resolved once per frame from the theme CSS variables
+    //on .root. The renderer never reads colour-mode constants
+    //directly so flipping `card_theme` reskins the canvases on
+    //the next paint with no extra plumbing.
+    private readPalette(): CanvasPalette
+    {
+        if (!this.rootEl)
+        {
+            return DEFAULT_PALETTE;
+        }
+        const cs = getComputedStyle(this.rootEl);
+        const get = (name: string, fallback: string) =>
+        {
+            const v = cs.getPropertyValue(name).trim();
+            return v.length > 0 ? v : fallback;
+        };
+        return {
+            text:    get('--hermes-canvas-text', DEFAULT_PALETTE.text),
+            mute:    get('--hermes-canvas-mute', DEFAULT_PALETTE.mute),
+            midline: get('--hermes-midline',     DEFAULT_PALETTE.midline)
+        };
+    }
+
     private paint(): void
     {
         if (!this.engine) return;
@@ -680,6 +831,8 @@ export class HermesCard extends LitElement
         const hasMotion = snapshot.pings.length > 0;
         if (!hasMotion && !this.dirty) return;
         this.dirty = false;
+
+        const palette = this.readPalette();
 
         //Sync the inner spacer's height so the scrollbar reflects
         //the true content extent. The pinned canvas already takes
@@ -694,8 +847,8 @@ export class HermesCard extends LitElement
         }
 
         let tooltipUpdated = false;
-        const stageTooltip = this.paintStage(snapshot, totalContentHeight);
-        const globalTooltip = this._config.showGlobal ? this.paintGlobal(snapshot) : null;
+        const stageTooltip = this.paintStage(snapshot, totalContentHeight, palette);
+        const globalTooltip = this._config.showGlobal ? this.paintGlobal(snapshot, palette) : null;
 
         //Resolve tooltip precedence: whichever canvas the cursor
         //is currently over wins. If both are over (shouldn't
@@ -730,7 +883,7 @@ export class HermesCard extends LitElement
         return STAGE_PAD_TOP + laneCount * LANE_PITCH + STAGE_PAD_BOTTOM;
     }
 
-    private paintStage(snapshot: ReturnType<HermesEngine['getSnapshot']>, totalContentHeight: number): TooltipState | null
+    private paintStage(snapshot: ReturnType<HermesEngine['getSnapshot']>, totalContentHeight: number, palette: CanvasPalette): TooltipState | null
     {
         const ctx = this.stageCtx;
         if (!ctx || this.stageW === 0 || this.stageH === 0) return null;
@@ -781,7 +934,7 @@ export class HermesCard extends LitElement
         }
 
         //Draw the dashed lane tracks + two-column labels.
-        this.drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW);
+        this.drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW, palette);
 
         //Now the pings, oldest first so newer ones glow over
         //older ones.
@@ -833,7 +986,7 @@ export class HermesCard extends LitElement
         return null;
     }
 
-    private paintGlobal(snapshot: ReturnType<HermesEngine['getSnapshot']>): TooltipState | null
+    private paintGlobal(snapshot: ReturnType<HermesEngine['getSnapshot']>, palette: CanvasPalette): TooltipState | null
     {
         const ctx = this.globalCtx;
         if (!ctx || this.globalW === 0 || this.globalH === 0) return null;
@@ -845,8 +998,9 @@ export class HermesCard extends LitElement
         ctx.clearRect(0, 0, this.globalW, this.globalH);
 
         //Subtle midline so the strip reads as a track, not a
-        //random blob field.
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        //random blob field. Colour comes from the theme palette
+        //so it stays legible against either background.
+        ctx.strokeStyle = palette.midline;
         ctx.lineWidth = 1;
         ctx.setLineDash([1.5, 4]);
         ctx.beginPath();
@@ -924,13 +1078,14 @@ export class HermesCard extends LitElement
         innerLeft:   number,
         innerRight:  number,
         labelW:      number,
-        valueW:      number
+        valueW:      number,
+        palette:     CanvasPalette
     ): void
     {
         const labelFont = '500 11px ' + getFontFamily();
         const valueFont = '400 10.5px ' + getMonoFamily();
-        const dimColor  = 'rgba(255,255,255,0.62)';
-        const muteColor = 'rgba(255,255,255,0.38)';
+        const dimColor  = palette.text;
+        const muteColor = palette.mute;
 
         const nameMaxWidth = labelW > 0
             ? Math.max(0, labelW - LABEL_TEXT_START - LABEL_COL_GAP / 2)
@@ -1027,7 +1182,10 @@ export class HermesCard extends LitElement
     //Translate a (canvas-local) sphere position into a tooltip
     //placed in .root coordinates so the tooltip element (which
     //lives directly under .root) lines up correctly regardless of
-    //which canvas the ping came from.
+    //which canvas the ping came from. We clamp the bubble's
+    //horizontal centre to keep it inside the card, flip it below
+    //the sphere when there isn't enough room above, and forward
+    //the residual offset so the arrow still points at the ping.
     private buildTooltipFromPing(
         p:           Ping,
         canvasX:     number,
@@ -1038,25 +1196,44 @@ export class HermesCard extends LitElement
     {
         const rootRect = this.rootEl?.getBoundingClientRect();
         const canvasRect = sourceCanvas.getBoundingClientRect();
+        const rootW = rootRect?.width  ?? this.stageW;
+        const rootH = rootRect?.height ?? this.stageH;
 
-        const x = (canvasRect.left - (rootRect?.left ?? 0)) + canvasX;
-        const y = (canvasRect.top - (rootRect?.top ?? 0)) + canvasY;
+        const rawX = (canvasRect.left - (rootRect?.left ?? 0)) + canvasX;
+        const rawY = (canvasRect.top  - (rootRect?.top  ?? 0)) + canvasY;
+
+        //Clamp x so the bubble never overflows the card's left
+        //or right edge. arrowOffset preserves the visual link to
+        //the sphere when we have to shift the bubble back inward.
+        const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
+        const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
+        const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
+        const arrowOffset = rawX - clampedX;
+
+        //If there isn't enough room above (rawY - TOOLTIP_H - 10
+        //would clip through the top), flip below the anchor. The
+        //bottom-side check is symmetric.
+        const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
+        const fitsBelow  = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
+        const place: 'above' | 'below' = wantsAbove ? 'above' : (fitsBelow ? 'below' : 'above');
 
         const ageMs = Date.now() - p.ts;
 
         return {
-            visible:   true,
-            x:         Math.round(x),
-            y:         Math.round(y),
-            pingId:    p.id,
-            showCount: global,
-            name:      p.friendlyName,
-            entityId:  p.entityId,
-            value:     formatLaneValue(p.newState, p.unit),
-            previous:  p.oldState !== null ? formatLaneValue(p.oldState, p.unit) : '',
-            ago:       formatAgo(ageMs, this._i18n),
-            count:     p.pingIndex,
-            color:     p.color
+            visible:     true,
+            x:           Math.round(clampedX),
+            y:           Math.round(rawY),
+            place,
+            arrowOffset: Math.round(arrowOffset),
+            pingId:      p.id,
+            showCount:   global,
+            name:        p.friendlyName,
+            entityId:    p.entityId,
+            value:       formatLaneValue(p.newState, p.unit),
+            previous:    p.oldState !== null ? formatLaneValue(p.oldState, p.unit) : '',
+            ago:         formatAgo(ageMs, this._i18n),
+            count:       p.pingIndex,
+            color:       p.color
         };
     }
 
@@ -1083,9 +1260,11 @@ function resolveConfig(cfg: HermesCardConfig): ResolvedConfig
     const showLabels = cfg.show_labels !== false;
     const labelWidth = showLabels ? clamp(cfg.label_width ?? 150, 0, 320) : 0;
     const valueWidth = clamp(cfg.value_width ?? 64, 0, 200);
+    const theme: 'dark' | 'light' = cfg.card_theme === 'light' ? 'light' : 'dark';
 
     return {
         title:                  (cfg.title ?? 'Activity').trim() || 'Activity',
+        theme,
         timespanSeconds:        clamp(cfg.timespan_seconds ?? 300, 10, 24 * 3600),
         globalTimespanSeconds:  clamp(cfg.global_timespan_seconds ?? 60, 5, 3600),
         globalHeight:           clamp(cfg.global_height ?? 72, 32, 200),
@@ -1210,4 +1389,25 @@ function entityHash(id: string): number
     const norm = h / 4294967296;
     _entityHashCache.set(id, norm);
     return norm;
+}
+
+/*
+ * Mini variant.
+ *
+ * Same bundle, same engine, same canvas: only the layout
+ * collapses to the top global strip. The `isMini` getter on
+ * HermesCard dispatches on tag name (this class) so render() and
+ * the grid-option overrides automatically pick the mini path.
+ *
+ * We override `getStubConfig` so the HA card picker preview shows
+ * the right starting config, but everything else is inherited
+ * from the full card.
+ */
+@customElement('hermes-mini-card')
+export class HermesMiniCard extends HermesCard
+{
+    static override getStubConfig(): HermesCardConfig
+    {
+        return HermesCard.miniStubConfig();
+    }
 }

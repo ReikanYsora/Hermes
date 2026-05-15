@@ -9,29 +9,43 @@
  * the English object first.
  */
 
+import { de } from './locales/de';
 import { en } from './locales/en';
+import { es } from './locales/es';
 import { fr } from './locales/fr';
+import { it } from './locales/it';
+import { nl } from './locales/nl';
+import { pt } from './locales/pt';
 
 export interface Translation
 {
-    cardName:         string;
-    cardDescription:  string;
-    entity:           string;
-    entities:         string;
-    emptyTitle:       string;
-    emptyHint:        string;
-    tooltipValue:     string;
-    tooltipPrevious:  string;
-    tooltipAgo:       string;
-    tooltipCount:     string;
-    justNow:          string;
-    unitSec:          string;
-    unitMin:          string;
-    unitHour:         string;
+    cardName:            string;
+    cardDescription:     string;
+    miniCardName:        string;
+    miniCardDescription: string;
+    entity:              string;
+    entities:            string;
+    emptyTitle:          string;
+    emptyHint:           string;
+    tooltipValue:        string;
+    tooltipPrevious:     string;
+    tooltipAgo:          string;
+    tooltipCount:        string;
+    justNow:             string;
+    unitSec:             string;
+    unitMin:             string;
+    unitHour:            string;
 
     //Editor-only strings; lazy-evaluated so a card with no editor
     //in view still pays nothing for them.
+    editorAppearanceSection: string;
+    editorTimelineSection:   string;
+    editorFilterSection:     string;
+
     editorTitle:             string;
+    editorCardTheme:         string;
+    editorThemeLight:        string;
+    editorThemeDark:         string;
     editorTimespan:          string;
     editorGlobalTimespan:    string;
     editorGlobalHeight:      string;
@@ -47,12 +61,20 @@ export interface Translation
     editorExcludeEntities:   string;
     editorExcludeDomains:    string;
     editorIgnoreUnavailable: string;
+
+    yes:                 string;
+    no:                  string;
 }
 
 const TABLE: Record<string, Translation> =
 {
+    de,
     en,
-    fr
+    es,
+    fr,
+    it,
+    nl,
+    pt
 };
 
 export function pickTranslations(language: string | undefined | null): Translation

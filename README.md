@@ -6,7 +6,12 @@
 
 **HERMES** is a custom [Home Assistant](https://www.home-assistant.io/) Lovelace card that shows the **pulse of your home** in real time. Every entity state change drops a coloured sphere onto a horizontal timeline that drifts from right to left, so a glance is enough to know what's happening, what just happened, and which corner of your installation is alive.
 
-It's a companion piece to [HELIOS](https://github.com/ReikanYsora/Helios): same minimalist, dark-first aesthetic, but instead of the sun it watches every sensor you point it at.
+It's a companion piece to [HELIOS](https://github.com/ReikanYsora/Helios): same minimalist aesthetic, light **or** dark theme, but instead of the sun it watches every sensor you point it at.
+
+Two cards ship in the same bundle:
+
+* **`custom:hermes-card`** — the full activity map: header, global activity strip, divider, scrollable per-entity stage.
+* **`custom:hermes-mini-card`** — the global strip on its own, ideal as a one-or-two-row chip in a sections dashboard.
 
 ---
 
@@ -21,6 +26,8 @@ It's a companion piece to [HELIOS](https://github.com/ReikanYsora/Helios): same 
 * **Hover for context**, a discreet tooltip surfaces the entity friendly name, the value it had at that exact moment, its previous value, how long ago the change happened, and (on the global strip) how many times this entity has changed since the card was mounted.
 * **Live legend**, only the channels that actually emitted a ping in the current session appear in the header, so the chrome stays quiet on lightly used dashboards.
 * **Dynamic sizing**, the card stretches to fill whatever its container hands it (sections grid, masonry, panel). No `height` knob in YAML.
+* **Light or dark theme**, switchable from the visual editor. Both surfaces are theme-aware down to the canvas (lane labels, midline, scrollbar all read from the live CSS variables).
+* **Multilingual**, English, French, German, Spanish, Italian, Dutch, Portuguese. Adapts to your Home Assistant language.
 * **Lightweight**, single bundled ES module, no external CDN, no map, no WebGL. Two plain `<canvas>` elements with a `ResizeObserver`, smooth on low-end devices.
 
 ---
@@ -81,6 +88,7 @@ exclude_entities:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `title` | string | `Activity` | Header text on the top-left. |
+| `card_theme` | `'dark' \| 'light'` | `'dark'` | Card chrome skin. Flips background, label colour, canvas text and scrollbar tint between the dark and light theme via CSS variables. |
 | `timespan_seconds` | int | `300` | Width of the per-entity stage window. A sphere takes this long to cross from right to left in the lower stage. |
 | `global_timespan_seconds` | int | `60` | Width of the top global strip window. Shorter than `timespan_seconds` to produce the fast "guitar-hero" rhythm. |
 | `global_height` | int | `72` | Vertical height of the top global strip in pixels. |

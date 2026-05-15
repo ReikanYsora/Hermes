@@ -2,8 +2,11 @@ import type { Translation } from '../index';
 
 export const en: Translation =
 {
-    cardName:        'Hermes',
-    cardDescription: 'Real-time entity activity pulse',
+    cardName:            'Hermes',
+    cardDescription:     'Real-time entity activity pulse',
+    miniCardName:        'Hermes (mini)',
+    miniCardDescription: 'Compact entity activity strip',
+
     entity:          'entity',
     entities:        'entities',
     emptyTitle:      'Listening…',
@@ -17,20 +20,30 @@ export const en: Translation =
     unitMin:         'min ago',
     unitHour:        'h ago',
 
+    editorAppearanceSection: 'Appearance',
+    editorTimelineSection:   'Timelines',
+    editorFilterSection:     'Entities',
+
     editorTitle:             'Title',
-    editorTimespan:          'Main window (seconds)',
-    editorGlobalTimespan:    'Global strip window (seconds)',
+    editorCardTheme:         'Theme',
+    editorThemeLight:        'Light',
+    editorThemeDark:         'Dark',
+    editorTimespan:          'Main window (s)',
+    editorGlobalTimespan:    'Global strip window (s)',
     editorGlobalHeight:      'Global strip height (px)',
-    editorShowGlobal:        'Show global activity strip',
-    editorLabelWidth:        'Name column width (px, 0 to hide)',
-    editorValueWidth:        'Value column width (px)',
+    editorShowGlobal:        'Show global strip',
+    editorLabelWidth:        'Name column (px)',
+    editorValueWidth:        'Value column (px)',
     editorShowLegend:        'Show legend',
-    editorShowLastValue:     'Show last value next to name',
-    editorMaxPings:          'Max retained pings',
+    editorShowLastValue:     'Show last value',
+    editorMaxPings:          'Max pings',
     editorEntities:          'Entities (one per line, supports * and ?)',
     editorEntitiesHint:      'Leave empty to track all entities in the allowed domains below.',
     editorIncludeDomains:    'Allowed domains (comma-separated)',
     editorExcludeEntities:   'Excluded entities (one per line)',
     editorExcludeDomains:    'Excluded domains (comma-separated)',
-    editorIgnoreUnavailable: 'Ignore unavailable / unknown blips'
+    editorIgnoreUnavailable: 'Ignore unavailable / unknown',
+
+    yes: 'On',
+    no:  'Off'
 };

@@ -1,19 +1,19 @@
 /*
  * Hermes visual editor.
  *
- * A small Lit element registered as <hermes-card-editor>, returned
- * to Home Assistant by HermesCard.getConfigElement(). HA's
- * dashboard wires it to the live YAML by setting `.hass` and
- * `.setConfig(cfg)` on us, then listens for the standard
- * `config-changed` CustomEvent we dispatch on every input change.
+ * Single-column Helios-style layout: each control is a `.field`
+ * row with the label on the left and the input / toggle on the
+ * right (180 px budget). Section titles in the primary HA colour
+ * group the rows. Returned by HermesCard.getConfigElement() and
+ * shared by both the full and mini variants — the mini-only
+ * card hides the per-entity stage fields below the global strip
+ * fields.
  *
- * The editor is intentionally barebones (no ha-form, no entity
- * pickers) so the bundle stays small and so it works on any HA
- * version without depending on internal frontend APIs that move
- * between releases.
+ * We dispatch the standard `config-changed` CustomEvent on every
+ * input mutation so HA picks the new state up in the live preview.
  */
 
-import { LitElement, html, css, TemplateResult } from 'lit';
+import { LitElement, html, css, TemplateResult, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { HermesCardConfig } from './hermes-card';
 import { pickTranslations, type Translation } from './i18n';
@@ -30,82 +30,131 @@ export class HermesCardEditor extends LitElement
 
         .editor
         {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px 16px;
-            padding: 12px 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
             font-family:
                 ui-sans-serif, system-ui, -apple-system, "Segoe UI",
                 "Inter", "Helvetica Neue", Arial, sans-serif;
         }
 
-        .row
-        {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            min-width: 0;
-        }
-
-        .row.wide
-        {
-            grid-column: 1 / -1;
-        }
-
-        .row > label
+        .section-title
         {
             font-size: 12px;
-            color: var(--secondary-text-color, #aaa);
-        }
-
-        .row input[type="text"],
-        .row input[type="number"],
-        .row textarea
-        {
-            background: var(--card-background-color, #1c1f24);
-            color: var(--primary-text-color, #eee);
-            border: 1px solid var(--divider-color, #333);
-            border-radius: 8px;
-            padding: 8px 10px;
-            font: inherit;
-            outline: none;
-        }
-
-        .row input:focus,
-        .row textarea:focus
-        {
-            border-color: var(--primary-color, #8b5cf6);
-        }
-
-        .row textarea
-        {
-            min-height: 84px;
-            resize: vertical;
-            font-family:
-                ui-monospace, SFMono-Regular, "SF Mono", Menlo,
-                Consolas, monospace;
-            font-size: 12px;
-        }
-
-        .row.toggle
-        {
-            flex-direction: row;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .row.toggle > label
-        {
-            order: 2;
-            font-size: 13px;
-            color: var(--primary-text-color, #eee);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--primary-color, #8b5cf6);
+            margin-top: 10px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--divider-color, rgba(0,0,0,0.12));
         }
 
         .hint
         {
             font-size: 11px;
-            color: var(--secondary-text-color, #aaa);
-            line-height: 1.4;
+            color: var(--secondary-text-color, #727272);
+            font-style: italic;
+        }
+
+        .field
+        {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            position: relative;
+        }
+
+        .field.field-block
+        {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
+        }
+
+        .field.field-block > .label
+        {
+            flex: none;
+        }
+
+        .label
+        {
+            font-size: 13px;
+            color: var(--primary-text-color, #212121);
+            flex: 1;
+        }
+
+        input[type="text"],
+        input[type="number"]
+        {
+            width: 180px;
+            padding: 6px 8px;
+            border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+            border-radius: 4px;
+            background: var(--card-background-color, #fff);
+            color: var(--primary-text-color, #212121);
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        textarea
+        {
+            width: 100%;
+            min-height: 80px;
+            box-sizing: border-box;
+            padding: 6px 8px;
+            border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+            border-radius: 4px;
+            background: var(--card-background-color, #fff);
+            color: var(--primary-text-color, #212121);
+            font-size: 12px;
+            font-family:
+                ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+                Consolas, monospace;
+            resize: vertical;
+        }
+
+        /*  Two-button toggle, sized to match the other inputs so
+            the right-edge alignment stays consistent. */
+        .segmented-toggle
+        {
+            display: inline-flex;
+            width: 180px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+            background: var(--card-background-color, #fff);
+        }
+
+        .seg-option
+        {
+            flex: 1;
+            padding: 7px 10px;
+            background: transparent;
+            color: var(--primary-text-color, #212121);
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .seg-option + .seg-option
+        {
+            border-left: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+        }
+
+        .seg-option:hover:not(.active)
+        {
+            background: var(--secondary-background-color, rgba(0,0,0,0.04));
+        }
+
+        .seg-option.active
+        {
+            background: var(--primary-color, #8b5cf6);
+            color: var(--text-primary-color, #fff);
         }
     `;
 
@@ -120,13 +169,22 @@ export class HermesCardEditor extends LitElement
     {
         //Defensive copy so HA's reactive system doesn't see our
         //in-progress mutations before we dispatch.
-        this._config = { ...config, type: 'custom:hermes-card' };
+        const type = config?.type === 'custom:hermes-mini-card'
+            ? 'custom:hermes-mini-card'
+            : 'custom:hermes-card';
+        this._config = { ...config, type };
+    }
+
+    private get _isMini(): boolean
+    {
+        return this._config.type === 'custom:hermes-mini-card';
     }
 
     override render(): TemplateResult
     {
         const c = this._config;
         const i = this._i18n;
+        const mini = this._isMini;
 
         const domainsCsv = (c.include_domains ?? [...DEFAULT_INCLUDE_DOMAINS]).join(', ');
         const excludeDomainsCsv = (c.exclude_domains ?? []).join(', ');
@@ -135,8 +193,10 @@ export class HermesCardEditor extends LitElement
 
         return html`
             <div class="editor">
-                <div class="row">
-                    <label>${i.editorTitle}</label>
+                <div class="section-title">${i.editorAppearanceSection}</div>
+
+                <div class="field">
+                    <span class="label">${i.editorTitle}</span>
                     <input
                         type="text"
                         .value=${c.title ?? 'Activity'}
@@ -144,68 +204,135 @@ export class HermesCardEditor extends LitElement
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i.editorTimespan}</label>
-                    <input
-                        type="number"
-                        min="10"
-                        max="86400"
-                        step="10"
-                        .value=${String(c.timespan_seconds ?? 300)}
-                        @input=${(e: Event) => this._updateNum('timespan_seconds', (e.target as HTMLInputElement).value)}
-                    />
+                <div class="field">
+                    <span class="label">${i.editorCardTheme}</span>
+                    <div class="segmented-toggle">
+                        <button
+                            type="button"
+                            class="seg-option ${(c.card_theme ?? 'dark') === 'light' ? 'active' : ''}"
+                            @click=${() => this._update('card_theme', 'light')}
+                        >${i.editorThemeLight}</button>
+                        <button
+                            type="button"
+                            class="seg-option ${(c.card_theme ?? 'dark') === 'dark' ? 'active' : ''}"
+                            @click=${() => this._update('card_theme', 'dark')}
+                        >${i.editorThemeDark}</button>
+                    </div>
                 </div>
 
-                <div class="row">
-                    <label>${i.editorGlobalTimespan}</label>
+                ${this._segmentedToggle(i.editorShowLegend, 'show_legend', c.show_legend !== false)}
+
+                <div class="section-title">${i.editorTimelineSection}</div>
+
+                <div class="field">
+                    <span class="label">${i.editorGlobalTimespan}</span>
                     <input
                         type="number"
                         min="5"
                         max="3600"
                         step="5"
-                        .value=${String(c.global_timespan_seconds ?? 60)}
+                        .value=${String(c.global_timespan_seconds ?? (mini ? 30 : 60))}
                         @input=${(e: Event) => this._updateNum('global_timespan_seconds', (e.target as HTMLInputElement).value)}
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i.editorGlobalHeight}</label>
+                ${mini ? nothing : html`
+                    <div class="field">
+                        <span class="label">${i.editorGlobalHeight}</span>
+                        <input
+                            type="number"
+                            min="32"
+                            max="200"
+                            step="4"
+                            .value=${String(c.global_height ?? 72)}
+                            @input=${(e: Event) => this._updateNum('global_height', (e.target as HTMLInputElement).value)}
+                        />
+                    </div>
+
+                    ${this._segmentedToggle(i.editorShowGlobal, 'show_global', c.show_global !== false)}
+
+                    <div class="field">
+                        <span class="label">${i.editorTimespan}</span>
+                        <input
+                            type="number"
+                            min="10"
+                            max="86400"
+                            step="10"
+                            .value=${String(c.timespan_seconds ?? 300)}
+                            @input=${(e: Event) => this._updateNum('timespan_seconds', (e.target as HTMLInputElement).value)}
+                        />
+                    </div>
+
+                    <div class="field">
+                        <span class="label">${i.editorLabelWidth}</span>
+                        <input
+                            type="number"
+                            min="0"
+                            max="320"
+                            step="4"
+                            .value=${String(c.label_width ?? 150)}
+                            @input=${(e: Event) => this._updateNum('label_width', (e.target as HTMLInputElement).value)}
+                        />
+                    </div>
+
+                    <div class="field">
+                        <span class="label">${i.editorValueWidth}</span>
+                        <input
+                            type="number"
+                            min="0"
+                            max="200"
+                            step="4"
+                            .value=${String(c.value_width ?? 64)}
+                            @input=${(e: Event) => this._updateNum('value_width', (e.target as HTMLInputElement).value)}
+                        />
+                    </div>
+
+                    ${this._segmentedToggle(i.editorShowLastValue, 'show_last_value', c.show_last_value !== false)}
+                `}
+
+                <div class="section-title">${i.editorFilterSection}</div>
+
+                <div class="field field-block">
+                    <span class="label">${i.editorEntities}</span>
+                    <textarea
+                        spellcheck="false"
+                        @input=${(e: Event) => this._updateList('entities', (e.target as HTMLTextAreaElement).value, '\n')}
+                    >${entitiesText}</textarea>
+                    <div class="hint">${i.editorEntitiesHint}</div>
+                </div>
+
+                <div class="field field-block">
+                    <span class="label">${i.editorIncludeDomains}</span>
                     <input
-                        type="number"
-                        min="32"
-                        max="200"
-                        step="4"
-                        .value=${String(c.global_height ?? 72)}
-                        @input=${(e: Event) => this._updateNum('global_height', (e.target as HTMLInputElement).value)}
+                        type="text"
+                        style="width: 100%; box-sizing: border-box;"
+                        .value=${domainsCsv}
+                        @input=${(e: Event) => this._updateList('include_domains', (e.target as HTMLInputElement).value, ',')}
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i.editorLabelWidth}</label>
+                <div class="field field-block">
+                    <span class="label">${i.editorExcludeEntities}</span>
+                    <textarea
+                        spellcheck="false"
+                        @input=${(e: Event) => this._updateList('exclude_entities', (e.target as HTMLTextAreaElement).value, '\n')}
+                    >${excludeEntitiesText}</textarea>
+                </div>
+
+                <div class="field field-block">
+                    <span class="label">${i.editorExcludeDomains}</span>
                     <input
-                        type="number"
-                        min="0"
-                        max="320"
-                        step="4"
-                        .value=${String(c.label_width ?? 150)}
-                        @input=${(e: Event) => this._updateNum('label_width', (e.target as HTMLInputElement).value)}
+                        type="text"
+                        style="width: 100%; box-sizing: border-box;"
+                        .value=${excludeDomainsCsv}
+                        @input=${(e: Event) => this._updateList('exclude_domains', (e.target as HTMLInputElement).value, ',')}
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i.editorValueWidth}</label>
-                    <input
-                        type="number"
-                        min="0"
-                        max="200"
-                        step="4"
-                        .value=${String(c.value_width ?? 64)}
-                        @input=${(e: Event) => this._updateNum('value_width', (e.target as HTMLInputElement).value)}
-                    />
-                </div>
+                ${this._segmentedToggle(i.editorIgnoreUnavailable, 'ignore_unavailable', c.ignore_unavailable !== false)}
 
-                <div class="row">
-                    <label>${i.editorMaxPings}</label>
+                <div class="field">
+                    <span class="label">${i.editorMaxPings}</span>
                     <input
                         type="number"
                         min="50"
@@ -215,62 +342,28 @@ export class HermesCardEditor extends LitElement
                         @input=${(e: Event) => this._updateNum('max_pings', (e.target as HTMLInputElement).value)}
                     />
                 </div>
-
-                ${this._toggleRow(i.editorShowGlobal,         'show_global',         c.show_global         !== false)}
-                ${this._toggleRow(i.editorShowLegend,         'show_legend',         c.show_legend         !== false)}
-                ${this._toggleRow(i.editorShowLastValue,      'show_last_value',     c.show_last_value     !== false)}
-                ${this._toggleRow(i.editorIgnoreUnavailable,  'ignore_unavailable',  c.ignore_unavailable  !== false)}
-
-                <div class="row wide">
-                    <label>${i.editorEntities}</label>
-                    <textarea
-                        spellcheck="false"
-                        @input=${(e: Event) => this._updateList('entities', (e.target as HTMLTextAreaElement).value, '\n')}
-                    >${entitiesText}</textarea>
-                    <div class="hint">${i.editorEntitiesHint}</div>
-                </div>
-
-                <div class="row wide">
-                    <label>${i.editorIncludeDomains}</label>
-                    <input
-                        type="text"
-                        .value=${domainsCsv}
-                        @input=${(e: Event) => this._updateList('include_domains', (e.target as HTMLInputElement).value, ',')}
-                    />
-                </div>
-
-                <div class="row">
-                    <label>${i.editorExcludeEntities}</label>
-                    <textarea
-                        spellcheck="false"
-                        @input=${(e: Event) => this._updateList('exclude_entities', (e.target as HTMLTextAreaElement).value, '\n')}
-                    >${excludeEntitiesText}</textarea>
-                </div>
-
-                <div class="row">
-                    <label>${i.editorExcludeDomains}</label>
-                    <input
-                        type="text"
-                        .value=${excludeDomainsCsv}
-                        @input=${(e: Event) => this._updateList('exclude_domains', (e.target as HTMLInputElement).value, ',')}
-                    />
-                </div>
             </div>
         `;
     }
 
-    private _toggleRow(label: string, key: keyof HermesCardConfig, current: boolean): TemplateResult
+    private _segmentedToggle(label: string, key: keyof HermesCardConfig, current: boolean): TemplateResult
     {
-        const id = `tgl-${String(key)}`;
+        const i = this._i18n;
         return html`
-            <div class="row toggle">
-                <input
-                    id=${id}
-                    type="checkbox"
-                    .checked=${current}
-                    @change=${(e: Event) => this._update(key, (e.target as HTMLInputElement).checked as never)}
-                />
-                <label for=${id}>${label}</label>
+            <div class="field">
+                <span class="label">${label}</span>
+                <div class="segmented-toggle">
+                    <button
+                        type="button"
+                        class="seg-option ${current ? 'active' : ''}"
+                        @click=${() => this._update(key, true as never)}
+                    >${i.yes}</button>
+                    <button
+                        type="button"
+                        class="seg-option ${!current ? 'active' : ''}"
+                        @click=${() => this._update(key, false as never)}
+                    >${i.no}</button>
+                </div>
             </div>
         `;
     }

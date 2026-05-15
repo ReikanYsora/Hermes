@@ -1020,43 +1020,22 @@ function isConnectivityBlip(oldRaw, newRaw) {
 function isMissingState(s2) {
   return s2 === null || s2 === "" || s2 === "unavailable" || s2 === "unknown";
 }
-const HERMES_VERSION = "0.2.0";
+const HERMES_VERSION = "0.3.0";
 const hermesCardStyles = i$3`
     :host
     {
         display: block;
         width:   100%;
         height:  100%;
-
-        --hermes-bg:           #0a0c10;
-        --hermes-bg-grad-1:    #0c0f15;
-        --hermes-bg-grad-2:    #07090c;
-        --hermes-fg:           #e7ecf3;
-        --hermes-fg-dim:       #9aa3b2;
-        --hermes-fg-mute:      #5a6273;
-        --hermes-rule:         rgba(255, 255, 255, 0.06);
-        --hermes-rule-strong:  rgba(255, 255, 255, 0.12);
-        --hermes-tooltip-bg:   rgba(16, 19, 26, 0.92);
-        --hermes-tooltip-bd:   rgba(255, 255, 255, 0.08);
-        --hermes-label-font:
-            ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-            "Inter", "Helvetica Neue", Arial, sans-serif;
-        --hermes-mono-font:
-            ui-monospace, SFMono-Regular, "SF Mono", Menlo,
-            Consolas, "Liberation Mono", monospace;
     }
 
     ha-card
     {
         position: relative;
         overflow: hidden;
-        background: radial-gradient(
-            120% 100% at 60% 0%,
-            var(--hermes-bg-grad-1) 0%,
-            var(--hermes-bg-grad-2) 100%
-        );
+        background: var(--hermes-bg-base, #0a0c10);
         color: var(--hermes-fg);
-        border-radius: var(--ha-card-border-radius, 14px);
+        border-radius: var(--ha-card-border-radius, 12px);
         font-family: var(--hermes-label-font);
         -webkit-font-smoothing: antialiased;
         width:      100%;
@@ -1066,8 +1045,8 @@ const hermesCardStyles = i$3`
             stay scoped to the card. */
         isolation: isolate;
         box-shadow:
-            inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-            inset 0 -40px 80px -40px rgba(0, 0, 0, 0.6);
+            inset 0 0 0 1px var(--hermes-card-inset, rgba(255, 255, 255, 0.03)),
+            inset 0 -40px 80px -40px var(--hermes-card-vignette, rgba(0, 0, 0, 0.6));
     }
 
     .root
@@ -1077,6 +1056,59 @@ const hermesCardStyles = i$3`
         width:          100%;
         height:         100%;
         min-height:     0;
+        position:       relative;
+        background:     var(--hermes-bg-grad, none);
+
+        --hermes-label-font:
+            ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+            "Inter", "Helvetica Neue", Arial, sans-serif;
+        --hermes-mono-font:
+            ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+            Consolas, "Liberation Mono", monospace;
+    }
+
+    /*  --- DARK theme (default) ---------------------------------- */
+    .root.theme-dark
+    {
+        --hermes-bg-base:        #0a0c10;
+        --hermes-bg-grad:        radial-gradient(120% 100% at 60% 0%, #0c0f15 0%, #07090c 100%);
+        --hermes-card-inset:     rgba(255, 255, 255, 0.03);
+        --hermes-card-vignette:  rgba(0, 0, 0, 0.6);
+        --hermes-fg:             #e7ecf3;
+        --hermes-fg-dim:         #9aa3b2;
+        --hermes-fg-mute:        #5a6273;
+        --hermes-rule:           rgba(255, 255, 255, 0.06);
+        --hermes-rule-strong:    rgba(255, 255, 255, 0.12);
+        --hermes-divider-tint:   rgba(255, 255, 255, 0.12);
+        --hermes-tooltip-bg:     rgba(16, 19, 26, 0.92);
+        --hermes-tooltip-bd:     rgba(255, 255, 255, 0.08);
+        --hermes-scrollbar:      rgba(255, 255, 255, 0.14);
+        --hermes-scrollbar-hov:  rgba(255, 255, 255, 0.24);
+        --hermes-midline:        rgba(255, 255, 255, 0.05);
+        --hermes-canvas-text:    rgba(255, 255, 255, 0.62);
+        --hermes-canvas-mute:    rgba(255, 255, 255, 0.38);
+    }
+
+    /*  --- LIGHT theme ------------------------------------------- */
+    .root.theme-light
+    {
+        --hermes-bg-base:        #f3f5f9;
+        --hermes-bg-grad:        radial-gradient(120% 100% at 60% 0%, #ffffff 0%, #eef1f6 100%);
+        --hermes-card-inset:     rgba(0, 0, 0, 0.04);
+        --hermes-card-vignette:  rgba(0, 0, 0, 0.06);
+        --hermes-fg:             #1a1d23;
+        --hermes-fg-dim:         #4a5160;
+        --hermes-fg-mute:        #8b94a5;
+        --hermes-rule:           rgba(0, 0, 0, 0.05);
+        --hermes-rule-strong:    rgba(0, 0, 0, 0.10);
+        --hermes-divider-tint:   rgba(0, 0, 0, 0.10);
+        --hermes-tooltip-bg:     rgba(255, 255, 255, 0.96);
+        --hermes-tooltip-bd:     rgba(0, 0, 0, 0.08);
+        --hermes-scrollbar:      rgba(0, 0, 0, 0.18);
+        --hermes-scrollbar-hov:  rgba(0, 0, 0, 0.32);
+        --hermes-midline:        rgba(0, 0, 0, 0.05);
+        --hermes-canvas-text:    rgba(0, 0, 0, 0.70);
+        --hermes-canvas-mute:    rgba(0, 0, 0, 0.42);
     }
 
     .header
@@ -1137,14 +1169,26 @@ const hermesCardStyles = i$3`
         box-shadow: 0 0 6px currentColor;
     }
 
-    /*  Global timeline strip. Sits just under the header, on its
-        own canvas so the scrolling main stage cannot move it. */
+    /*  Global timeline strip. In normal layout it has a fixed
+        height set inline by the renderer; in mini-card mode it
+        takes the whole available space (the stage is gone). */
     .global
     {
         flex: 0 0 auto;
         position: relative;
         width: 100%;
         overflow: hidden;
+    }
+
+    .global.mini
+    {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .root.mini .header
+    {
+        padding-bottom: 4px;
     }
 
     .global canvas
@@ -1163,8 +1207,8 @@ const hermesCardStyles = i$3`
         background: linear-gradient(
             to right,
             transparent 0%,
-            var(--hermes-rule-strong) 16%,
-            var(--hermes-rule-strong) 84%,
+            var(--hermes-divider-tint) 16%,
+            var(--hermes-divider-tint) 84%,
             transparent 100%
         );
         margin: 0 12px;
@@ -1186,7 +1230,7 @@ const hermesCardStyles = i$3`
         overflow-y: auto;
         overflow-x: hidden;
         scrollbar-width: thin;
-        scrollbar-color: rgba(255,255,255,0.18) transparent;
+        scrollbar-color: var(--hermes-scrollbar) transparent;
     }
 
     .stage::-webkit-scrollbar
@@ -1201,13 +1245,13 @@ const hermesCardStyles = i$3`
 
     .stage::-webkit-scrollbar-thumb
     {
-        background: rgba(255, 255, 255, 0.14);
+        background: var(--hermes-scrollbar);
         border-radius: 6px;
     }
 
     .stage::-webkit-scrollbar-thumb:hover
     {
-        background: rgba(255, 255, 255, 0.24);
+        background: var(--hermes-scrollbar-hov);
     }
 
     .stage-pin
@@ -1255,7 +1299,6 @@ const hermesCardStyles = i$3`
         box-shadow:
             0 8px 24px rgba(0, 0, 0, 0.45),
             0 0 0 1px rgba(0, 0, 0, 0.3);
-        transform: translate(-50%, calc(-100% - 10px));
         opacity: 0;
         transition: opacity 90ms ease-out;
     }
@@ -1263,6 +1306,20 @@ const hermesCardStyles = i$3`
     .tooltip.visible
     {
         opacity: 1;
+    }
+
+    /*  Tooltip placement variants. The transform is what positions
+        the bubble relative to the (x, y) anchor: above the ping
+        by default, below it when the anchor is too close to the
+        top of the card. */
+    .tooltip.above
+    {
+        transform: translate(-50%, calc(-100% - 10px));
+    }
+
+    .tooltip.below
+    {
+        transform: translate(-50%, 14px);
     }
 
     .tooltip .tt-name
@@ -1312,14 +1369,25 @@ const hermesCardStyles = i$3`
     .tooltip .tt-arrow
     {
         position: absolute;
-        bottom: -5px;
-        left: 50%;
+        left: calc(50% + var(--hermes-arrow-offset, 0px));
         transform: translateX(-50%) rotate(45deg);
         width: 8px;
         height: 8px;
         background: var(--hermes-tooltip-bg);
+    }
+
+    .tooltip.above .tt-arrow
+    {
+        bottom: -5px;
         border-right: 1px solid var(--hermes-tooltip-bd);
         border-bottom: 1px solid var(--hermes-tooltip-bd);
+    }
+
+    .tooltip.below .tt-arrow
+    {
+        top: -5px;
+        border-left: 1px solid var(--hermes-tooltip-bd);
+        border-top:  1px solid var(--hermes-tooltip-bd);
     }
 
     .empty
@@ -1354,9 +1422,53 @@ const hermesCardStyles = i$3`
         50%      { opacity: 0.9; transform: scale(1.6); }
     }
 `;
+const de = {
+  cardName: "Hermes",
+  cardDescription: "Echtzeit-Aktivitätspuls der Entitäten",
+  miniCardName: "Hermes (Mini)",
+  miniCardDescription: "Kompakter Aktivitätsstreifen der Entitäten",
+  entity: "Entität",
+  entities: "Entitäten",
+  emptyTitle: "Höre zu…",
+  emptyHint: "Für jede Zustandsänderung erscheint eine Kugel.",
+  tooltipValue: "Wert",
+  tooltipPrevious: "Vorheriger",
+  tooltipAgo: "Gesehen",
+  tooltipCount: "Änderungen",
+  justNow: "gerade eben",
+  unitSec: "s",
+  unitMin: "Min.",
+  unitHour: "Std.",
+  editorAppearanceSection: "Erscheinungsbild",
+  editorTimelineSection: "Zeitachsen",
+  editorFilterSection: "Entitäten",
+  editorTitle: "Titel",
+  editorCardTheme: "Design",
+  editorThemeLight: "Hell",
+  editorThemeDark: "Dunkel",
+  editorTimespan: "Hauptfenster (s)",
+  editorGlobalTimespan: "Globaler Streifen (s)",
+  editorGlobalHeight: "Höhe des globalen Streifens (px)",
+  editorShowGlobal: "Globalen Streifen zeigen",
+  editorLabelWidth: "Namensspalte (px)",
+  editorValueWidth: "Wertspalte (px)",
+  editorShowLegend: "Legende zeigen",
+  editorShowLastValue: "Letzten Wert zeigen",
+  editorMaxPings: "Max. Pings",
+  editorEntities: "Entitäten (eine pro Zeile, * und ? erlaubt)",
+  editorEntitiesHint: "Leer lassen, um alle Entitäten der unten erlaubten Domains zu beobachten.",
+  editorIncludeDomains: "Erlaubte Domains (kommagetrennt)",
+  editorExcludeEntities: "Ausgeschlossene Entitäten (eine pro Zeile)",
+  editorExcludeDomains: "Ausgeschlossene Domains (kommagetrennt)",
+  editorIgnoreUnavailable: "Nicht verfügbar / unbekannt ignorieren",
+  yes: "Ein",
+  no: "Aus"
+};
 const en = {
   cardName: "Hermes",
   cardDescription: "Real-time entity activity pulse",
+  miniCardName: "Hermes (mini)",
+  miniCardDescription: "Compact entity activity strip",
   entity: "entity",
   entities: "entities",
   emptyTitle: "Listening…",
@@ -1369,26 +1481,78 @@ const en = {
   unitSec: "s ago",
   unitMin: "min ago",
   unitHour: "h ago",
+  editorAppearanceSection: "Appearance",
+  editorTimelineSection: "Timelines",
+  editorFilterSection: "Entities",
   editorTitle: "Title",
-  editorTimespan: "Main window (seconds)",
-  editorGlobalTimespan: "Global strip window (seconds)",
+  editorCardTheme: "Theme",
+  editorThemeLight: "Light",
+  editorThemeDark: "Dark",
+  editorTimespan: "Main window (s)",
+  editorGlobalTimespan: "Global strip window (s)",
   editorGlobalHeight: "Global strip height (px)",
-  editorShowGlobal: "Show global activity strip",
-  editorLabelWidth: "Name column width (px, 0 to hide)",
-  editorValueWidth: "Value column width (px)",
+  editorShowGlobal: "Show global strip",
+  editorLabelWidth: "Name column (px)",
+  editorValueWidth: "Value column (px)",
   editorShowLegend: "Show legend",
-  editorShowLastValue: "Show last value next to name",
-  editorMaxPings: "Max retained pings",
+  editorShowLastValue: "Show last value",
+  editorMaxPings: "Max pings",
   editorEntities: "Entities (one per line, supports * and ?)",
   editorEntitiesHint: "Leave empty to track all entities in the allowed domains below.",
   editorIncludeDomains: "Allowed domains (comma-separated)",
   editorExcludeEntities: "Excluded entities (one per line)",
   editorExcludeDomains: "Excluded domains (comma-separated)",
-  editorIgnoreUnavailable: "Ignore unavailable / unknown blips"
+  editorIgnoreUnavailable: "Ignore unavailable / unknown",
+  yes: "On",
+  no: "Off"
+};
+const es = {
+  cardName: "Hermes",
+  cardDescription: "Pulso de actividad de entidades en tiempo real",
+  miniCardName: "Hermes (mini)",
+  miniCardDescription: "Banda compacta de actividad de entidades",
+  entity: "entidad",
+  entities: "entidades",
+  emptyTitle: "Escuchando…",
+  emptyHint: "Aparecerá una esfera por cada cambio de estado de una entidad.",
+  tooltipValue: "Valor",
+  tooltipPrevious: "Anterior",
+  tooltipAgo: "Visto",
+  tooltipCount: "Cambios",
+  justNow: "ahora mismo",
+  unitSec: "s",
+  unitMin: "min",
+  unitHour: "h",
+  editorAppearanceSection: "Apariencia",
+  editorTimelineSection: "Cronologías",
+  editorFilterSection: "Entidades",
+  editorTitle: "Título",
+  editorCardTheme: "Tema",
+  editorThemeLight: "Claro",
+  editorThemeDark: "Oscuro",
+  editorTimespan: "Ventana principal (s)",
+  editorGlobalTimespan: "Ventana de la banda global (s)",
+  editorGlobalHeight: "Altura de la banda global (px)",
+  editorShowGlobal: "Mostrar banda global",
+  editorLabelWidth: "Columna nombre (px)",
+  editorValueWidth: "Columna valor (px)",
+  editorShowLegend: "Mostrar leyenda",
+  editorShowLastValue: "Mostrar último valor",
+  editorMaxPings: "Máx. pings",
+  editorEntities: "Entidades (una por línea, * y ? admitidos)",
+  editorEntitiesHint: "Deja vacío para seguir todas las entidades de los dominios permitidos abajo.",
+  editorIncludeDomains: "Dominios permitidos (separados por comas)",
+  editorExcludeEntities: "Entidades excluidas (una por línea)",
+  editorExcludeDomains: "Dominios excluidos (separados por comas)",
+  editorIgnoreUnavailable: "Ignorar no disponible / desconocido",
+  yes: "Sí",
+  no: "No"
 };
 const fr = {
   cardName: "Hermes",
   cardDescription: "Pouls d'activité des entités en temps réel",
+  miniCardName: "Hermes (mini)",
+  miniCardDescription: "Bande compacte d'activité des entités",
   entity: "entité",
   entities: "entités",
   emptyTitle: "À l'écoute…",
@@ -1401,26 +1565,165 @@ const fr = {
   unitSec: "s",
   unitMin: "min",
   unitHour: "h",
+  editorAppearanceSection: "Apparence",
+  editorTimelineSection: "Chronologies",
+  editorFilterSection: "Entités",
   editorTitle: "Titre",
-  editorTimespan: "Fenêtre principale (secondes)",
-  editorGlobalTimespan: "Fenêtre de la bande globale (secondes)",
+  editorCardTheme: "Thème",
+  editorThemeLight: "Clair",
+  editorThemeDark: "Sombre",
+  editorTimespan: "Fenêtre principale (s)",
+  editorGlobalTimespan: "Fenêtre de la bande globale (s)",
   editorGlobalHeight: "Hauteur de la bande globale (px)",
-  editorShowGlobal: "Afficher la bande d'activité globale",
-  editorLabelWidth: "Largeur de la colonne nom (px, 0 pour masquer)",
-  editorValueWidth: "Largeur de la colonne valeur (px)",
+  editorShowGlobal: "Afficher la bande globale",
+  editorLabelWidth: "Colonne nom (px)",
+  editorValueWidth: "Colonne valeur (px)",
   editorShowLegend: "Afficher la légende",
-  editorShowLastValue: "Afficher la dernière valeur près du nom",
+  editorShowLastValue: "Afficher la dernière valeur",
   editorMaxPings: "Pings retenus (max)",
   editorEntities: "Entités (une par ligne, * et ? acceptés)",
   editorEntitiesHint: "Laissez vide pour suivre toutes les entités des domaines autorisés ci-dessous.",
   editorIncludeDomains: "Domaines autorisés (séparés par des virgules)",
   editorExcludeEntities: "Entités exclues (une par ligne)",
   editorExcludeDomains: "Domaines exclus (séparés par des virgules)",
-  editorIgnoreUnavailable: "Ignorer les passages indisponible / inconnu"
+  editorIgnoreUnavailable: "Ignorer indisponible / inconnu",
+  yes: "Oui",
+  no: "Non"
+};
+const it = {
+  cardName: "Hermes",
+  cardDescription: "Polso d'attività delle entità in tempo reale",
+  miniCardName: "Hermes (mini)",
+  miniCardDescription: "Striscia compatta d'attività delle entità",
+  entity: "entità",
+  entities: "entità",
+  emptyTitle: "In ascolto…",
+  emptyHint: "Apparirà una sfera per ogni cambio di stato di un'entità.",
+  tooltipValue: "Valore",
+  tooltipPrevious: "Precedente",
+  tooltipAgo: "Visto",
+  tooltipCount: "Cambi",
+  justNow: "proprio ora",
+  unitSec: "s fa",
+  unitMin: "min fa",
+  unitHour: "h fa",
+  editorAppearanceSection: "Aspetto",
+  editorTimelineSection: "Cronologie",
+  editorFilterSection: "Entità",
+  editorTitle: "Titolo",
+  editorCardTheme: "Tema",
+  editorThemeLight: "Chiaro",
+  editorThemeDark: "Scuro",
+  editorTimespan: "Finestra principale (s)",
+  editorGlobalTimespan: "Finestra della striscia globale (s)",
+  editorGlobalHeight: "Altezza della striscia globale (px)",
+  editorShowGlobal: "Mostra striscia globale",
+  editorLabelWidth: "Colonna nome (px)",
+  editorValueWidth: "Colonna valore (px)",
+  editorShowLegend: "Mostra legenda",
+  editorShowLastValue: "Mostra ultimo valore",
+  editorMaxPings: "Max ping",
+  editorEntities: "Entità (una per riga, * e ? accettati)",
+  editorEntitiesHint: "Lascia vuoto per seguire tutte le entità dei domini consentiti qui sotto.",
+  editorIncludeDomains: "Domini consentiti (separati da virgola)",
+  editorExcludeEntities: "Entità escluse (una per riga)",
+  editorExcludeDomains: "Domini esclusi (separati da virgola)",
+  editorIgnoreUnavailable: "Ignora non disponibile / sconosciuto",
+  yes: "On",
+  no: "Off"
+};
+const nl = {
+  cardName: "Hermes",
+  cardDescription: "Realtime activiteitsritme van entiteiten",
+  miniCardName: "Hermes (mini)",
+  miniCardDescription: "Compacte activiteitsstrip van entiteiten",
+  entity: "entiteit",
+  entities: "entiteiten",
+  emptyTitle: "Luisteren…",
+  emptyHint: "Voor elke statuswijziging van een entiteit verschijnt een bol.",
+  tooltipValue: "Waarde",
+  tooltipPrevious: "Vorige",
+  tooltipAgo: "Gezien",
+  tooltipCount: "Wijzigingen",
+  justNow: "zojuist",
+  unitSec: "s geleden",
+  unitMin: "min geleden",
+  unitHour: "u geleden",
+  editorAppearanceSection: "Uiterlijk",
+  editorTimelineSection: "Tijdlijnen",
+  editorFilterSection: "Entiteiten",
+  editorTitle: "Titel",
+  editorCardTheme: "Thema",
+  editorThemeLight: "Licht",
+  editorThemeDark: "Donker",
+  editorTimespan: "Hoofdvenster (s)",
+  editorGlobalTimespan: "Globaal venster (s)",
+  editorGlobalHeight: "Hoogte globale strip (px)",
+  editorShowGlobal: "Toon globale strip",
+  editorLabelWidth: "Naamkolom (px)",
+  editorValueWidth: "Waardekolom (px)",
+  editorShowLegend: "Toon legenda",
+  editorShowLastValue: "Toon laatste waarde",
+  editorMaxPings: "Max. pings",
+  editorEntities: "Entiteiten (één per regel, * en ? toegestaan)",
+  editorEntitiesHint: "Laat leeg om alle entiteiten van de toegestane domeinen hieronder te volgen.",
+  editorIncludeDomains: "Toegestane domeinen (komma-gescheiden)",
+  editorExcludeEntities: "Uitgesloten entiteiten (één per regel)",
+  editorExcludeDomains: "Uitgesloten domeinen (komma-gescheiden)",
+  editorIgnoreUnavailable: "Niet beschikbaar / onbekend negeren",
+  yes: "Aan",
+  no: "Uit"
+};
+const pt = {
+  cardName: "Hermes",
+  cardDescription: "Pulso de atividade das entidades em tempo real",
+  miniCardName: "Hermes (mini)",
+  miniCardDescription: "Faixa compacta de atividade das entidades",
+  entity: "entidade",
+  entities: "entidades",
+  emptyTitle: "A escutar…",
+  emptyHint: "Aparecerá uma esfera por cada mudança de estado de uma entidade.",
+  tooltipValue: "Valor",
+  tooltipPrevious: "Anterior",
+  tooltipAgo: "Visto",
+  tooltipCount: "Mudanças",
+  justNow: "agora mesmo",
+  unitSec: "s atrás",
+  unitMin: "min atrás",
+  unitHour: "h atrás",
+  editorAppearanceSection: "Aparência",
+  editorTimelineSection: "Cronologias",
+  editorFilterSection: "Entidades",
+  editorTitle: "Título",
+  editorCardTheme: "Tema",
+  editorThemeLight: "Claro",
+  editorThemeDark: "Escuro",
+  editorTimespan: "Janela principal (s)",
+  editorGlobalTimespan: "Janela da faixa global (s)",
+  editorGlobalHeight: "Altura da faixa global (px)",
+  editorShowGlobal: "Mostrar faixa global",
+  editorLabelWidth: "Coluna nome (px)",
+  editorValueWidth: "Coluna valor (px)",
+  editorShowLegend: "Mostrar legenda",
+  editorShowLastValue: "Mostrar último valor",
+  editorMaxPings: "Máx. pings",
+  editorEntities: "Entidades (uma por linha, * e ? aceites)",
+  editorEntitiesHint: "Deixe vazio para acompanhar todas as entidades dos domínios permitidos abaixo.",
+  editorIncludeDomains: "Domínios permitidos (separados por vírgula)",
+  editorExcludeEntities: "Entidades excluídas (uma por linha)",
+  editorExcludeDomains: "Domínios excluídos (separados por vírgula)",
+  editorIgnoreUnavailable: "Ignorar indisponível / desconhecido",
+  yes: "Sim",
+  no: "Não"
 };
 const TABLE = {
+  de,
   en,
-  fr
+  es,
+  fr,
+  it,
+  nl,
+  pt
 };
 function pickTranslations(language) {
   if (!language) return en;
@@ -1449,19 +1752,26 @@ let HermesCardEditor = class extends i {
     );
   }
   setConfig(config) {
-    this._config = { ...config, type: "custom:hermes-card" };
+    const type = config?.type === "custom:hermes-mini-card" ? "custom:hermes-mini-card" : "custom:hermes-card";
+    this._config = { ...config, type };
+  }
+  get _isMini() {
+    return this._config.type === "custom:hermes-mini-card";
   }
   render() {
     const c2 = this._config;
     const i2 = this._i18n;
+    const mini = this._isMini;
     const domainsCsv = (c2.include_domains ?? [...DEFAULT_INCLUDE_DOMAINS]).join(", ");
     const excludeDomainsCsv = (c2.exclude_domains ?? []).join(", ");
     const entitiesText = (c2.entities ?? []).join("\n");
     const excludeEntitiesText = (c2.exclude_entities ?? []).join("\n");
     return b`
             <div class="editor">
-                <div class="row">
-                    <label>${i2.editorTitle}</label>
+                <div class="section-title">${i2.editorAppearanceSection}</div>
+
+                <div class="field">
+                    <span class="label">${i2.editorTitle}</span>
                     <input
                         type="text"
                         .value=${c2.title ?? "Activity"}
@@ -1469,68 +1779,135 @@ let HermesCardEditor = class extends i {
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i2.editorTimespan}</label>
-                    <input
-                        type="number"
-                        min="10"
-                        max="86400"
-                        step="10"
-                        .value=${String(c2.timespan_seconds ?? 300)}
-                        @input=${(e2) => this._updateNum("timespan_seconds", e2.target.value)}
-                    />
+                <div class="field">
+                    <span class="label">${i2.editorCardTheme}</span>
+                    <div class="segmented-toggle">
+                        <button
+                            type="button"
+                            class="seg-option ${(c2.card_theme ?? "dark") === "light" ? "active" : ""}"
+                            @click=${() => this._update("card_theme", "light")}
+                        >${i2.editorThemeLight}</button>
+                        <button
+                            type="button"
+                            class="seg-option ${(c2.card_theme ?? "dark") === "dark" ? "active" : ""}"
+                            @click=${() => this._update("card_theme", "dark")}
+                        >${i2.editorThemeDark}</button>
+                    </div>
                 </div>
 
-                <div class="row">
-                    <label>${i2.editorGlobalTimespan}</label>
+                ${this._segmentedToggle(i2.editorShowLegend, "show_legend", c2.show_legend !== false)}
+
+                <div class="section-title">${i2.editorTimelineSection}</div>
+
+                <div class="field">
+                    <span class="label">${i2.editorGlobalTimespan}</span>
                     <input
                         type="number"
                         min="5"
                         max="3600"
                         step="5"
-                        .value=${String(c2.global_timespan_seconds ?? 60)}
+                        .value=${String(c2.global_timespan_seconds ?? (mini ? 30 : 60))}
                         @input=${(e2) => this._updateNum("global_timespan_seconds", e2.target.value)}
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i2.editorGlobalHeight}</label>
+                ${mini ? A : b`
+                    <div class="field">
+                        <span class="label">${i2.editorGlobalHeight}</span>
+                        <input
+                            type="number"
+                            min="32"
+                            max="200"
+                            step="4"
+                            .value=${String(c2.global_height ?? 72)}
+                            @input=${(e2) => this._updateNum("global_height", e2.target.value)}
+                        />
+                    </div>
+
+                    ${this._segmentedToggle(i2.editorShowGlobal, "show_global", c2.show_global !== false)}
+
+                    <div class="field">
+                        <span class="label">${i2.editorTimespan}</span>
+                        <input
+                            type="number"
+                            min="10"
+                            max="86400"
+                            step="10"
+                            .value=${String(c2.timespan_seconds ?? 300)}
+                            @input=${(e2) => this._updateNum("timespan_seconds", e2.target.value)}
+                        />
+                    </div>
+
+                    <div class="field">
+                        <span class="label">${i2.editorLabelWidth}</span>
+                        <input
+                            type="number"
+                            min="0"
+                            max="320"
+                            step="4"
+                            .value=${String(c2.label_width ?? 150)}
+                            @input=${(e2) => this._updateNum("label_width", e2.target.value)}
+                        />
+                    </div>
+
+                    <div class="field">
+                        <span class="label">${i2.editorValueWidth}</span>
+                        <input
+                            type="number"
+                            min="0"
+                            max="200"
+                            step="4"
+                            .value=${String(c2.value_width ?? 64)}
+                            @input=${(e2) => this._updateNum("value_width", e2.target.value)}
+                        />
+                    </div>
+
+                    ${this._segmentedToggle(i2.editorShowLastValue, "show_last_value", c2.show_last_value !== false)}
+                `}
+
+                <div class="section-title">${i2.editorFilterSection}</div>
+
+                <div class="field field-block">
+                    <span class="label">${i2.editorEntities}</span>
+                    <textarea
+                        spellcheck="false"
+                        @input=${(e2) => this._updateList("entities", e2.target.value, "\n")}
+                    >${entitiesText}</textarea>
+                    <div class="hint">${i2.editorEntitiesHint}</div>
+                </div>
+
+                <div class="field field-block">
+                    <span class="label">${i2.editorIncludeDomains}</span>
                     <input
-                        type="number"
-                        min="32"
-                        max="200"
-                        step="4"
-                        .value=${String(c2.global_height ?? 72)}
-                        @input=${(e2) => this._updateNum("global_height", e2.target.value)}
+                        type="text"
+                        style="width: 100%; box-sizing: border-box;"
+                        .value=${domainsCsv}
+                        @input=${(e2) => this._updateList("include_domains", e2.target.value, ",")}
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i2.editorLabelWidth}</label>
+                <div class="field field-block">
+                    <span class="label">${i2.editorExcludeEntities}</span>
+                    <textarea
+                        spellcheck="false"
+                        @input=${(e2) => this._updateList("exclude_entities", e2.target.value, "\n")}
+                    >${excludeEntitiesText}</textarea>
+                </div>
+
+                <div class="field field-block">
+                    <span class="label">${i2.editorExcludeDomains}</span>
                     <input
-                        type="number"
-                        min="0"
-                        max="320"
-                        step="4"
-                        .value=${String(c2.label_width ?? 150)}
-                        @input=${(e2) => this._updateNum("label_width", e2.target.value)}
+                        type="text"
+                        style="width: 100%; box-sizing: border-box;"
+                        .value=${excludeDomainsCsv}
+                        @input=${(e2) => this._updateList("exclude_domains", e2.target.value, ",")}
                     />
                 </div>
 
-                <div class="row">
-                    <label>${i2.editorValueWidth}</label>
-                    <input
-                        type="number"
-                        min="0"
-                        max="200"
-                        step="4"
-                        .value=${String(c2.value_width ?? 64)}
-                        @input=${(e2) => this._updateNum("value_width", e2.target.value)}
-                    />
-                </div>
+                ${this._segmentedToggle(i2.editorIgnoreUnavailable, "ignore_unavailable", c2.ignore_unavailable !== false)}
 
-                <div class="row">
-                    <label>${i2.editorMaxPings}</label>
+                <div class="field">
+                    <span class="label">${i2.editorMaxPings}</span>
                     <input
                         type="number"
                         min="50"
@@ -1540,60 +1917,26 @@ let HermesCardEditor = class extends i {
                         @input=${(e2) => this._updateNum("max_pings", e2.target.value)}
                     />
                 </div>
-
-                ${this._toggleRow(i2.editorShowGlobal, "show_global", c2.show_global !== false)}
-                ${this._toggleRow(i2.editorShowLegend, "show_legend", c2.show_legend !== false)}
-                ${this._toggleRow(i2.editorShowLastValue, "show_last_value", c2.show_last_value !== false)}
-                ${this._toggleRow(i2.editorIgnoreUnavailable, "ignore_unavailable", c2.ignore_unavailable !== false)}
-
-                <div class="row wide">
-                    <label>${i2.editorEntities}</label>
-                    <textarea
-                        spellcheck="false"
-                        @input=${(e2) => this._updateList("entities", e2.target.value, "\n")}
-                    >${entitiesText}</textarea>
-                    <div class="hint">${i2.editorEntitiesHint}</div>
-                </div>
-
-                <div class="row wide">
-                    <label>${i2.editorIncludeDomains}</label>
-                    <input
-                        type="text"
-                        .value=${domainsCsv}
-                        @input=${(e2) => this._updateList("include_domains", e2.target.value, ",")}
-                    />
-                </div>
-
-                <div class="row">
-                    <label>${i2.editorExcludeEntities}</label>
-                    <textarea
-                        spellcheck="false"
-                        @input=${(e2) => this._updateList("exclude_entities", e2.target.value, "\n")}
-                    >${excludeEntitiesText}</textarea>
-                </div>
-
-                <div class="row">
-                    <label>${i2.editorExcludeDomains}</label>
-                    <input
-                        type="text"
-                        .value=${excludeDomainsCsv}
-                        @input=${(e2) => this._updateList("exclude_domains", e2.target.value, ",")}
-                    />
-                </div>
             </div>
         `;
   }
-  _toggleRow(label, key, current) {
-    const id = `tgl-${String(key)}`;
+  _segmentedToggle(label, key, current) {
+    const i2 = this._i18n;
     return b`
-            <div class="row toggle">
-                <input
-                    id=${id}
-                    type="checkbox"
-                    .checked=${current}
-                    @change=${(e2) => this._update(key, e2.target.checked)}
-                />
-                <label for=${id}>${label}</label>
+            <div class="field">
+                <span class="label">${label}</span>
+                <div class="segmented-toggle">
+                    <button
+                        type="button"
+                        class="seg-option ${current ? "active" : ""}"
+                        @click=${() => this._update(key, true)}
+                    >${i2.yes}</button>
+                    <button
+                        type="button"
+                        class="seg-option ${!current ? "active" : ""}"
+                        @click=${() => this._update(key, false)}
+                    >${i2.no}</button>
+                </div>
             </div>
         `;
   }
@@ -1639,82 +1982,131 @@ HermesCardEditor.styles = i$3`
 
         .editor
         {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px 16px;
-            padding: 12px 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
             font-family:
                 ui-sans-serif, system-ui, -apple-system, "Segoe UI",
                 "Inter", "Helvetica Neue", Arial, sans-serif;
         }
 
-        .row
-        {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            min-width: 0;
-        }
-
-        .row.wide
-        {
-            grid-column: 1 / -1;
-        }
-
-        .row > label
+        .section-title
         {
             font-size: 12px;
-            color: var(--secondary-text-color, #aaa);
-        }
-
-        .row input[type="text"],
-        .row input[type="number"],
-        .row textarea
-        {
-            background: var(--card-background-color, #1c1f24);
-            color: var(--primary-text-color, #eee);
-            border: 1px solid var(--divider-color, #333);
-            border-radius: 8px;
-            padding: 8px 10px;
-            font: inherit;
-            outline: none;
-        }
-
-        .row input:focus,
-        .row textarea:focus
-        {
-            border-color: var(--primary-color, #8b5cf6);
-        }
-
-        .row textarea
-        {
-            min-height: 84px;
-            resize: vertical;
-            font-family:
-                ui-monospace, SFMono-Regular, "SF Mono", Menlo,
-                Consolas, monospace;
-            font-size: 12px;
-        }
-
-        .row.toggle
-        {
-            flex-direction: row;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .row.toggle > label
-        {
-            order: 2;
-            font-size: 13px;
-            color: var(--primary-text-color, #eee);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--primary-color, #8b5cf6);
+            margin-top: 10px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--divider-color, rgba(0,0,0,0.12));
         }
 
         .hint
         {
             font-size: 11px;
-            color: var(--secondary-text-color, #aaa);
-            line-height: 1.4;
+            color: var(--secondary-text-color, #727272);
+            font-style: italic;
+        }
+
+        .field
+        {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            position: relative;
+        }
+
+        .field.field-block
+        {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
+        }
+
+        .field.field-block > .label
+        {
+            flex: none;
+        }
+
+        .label
+        {
+            font-size: 13px;
+            color: var(--primary-text-color, #212121);
+            flex: 1;
+        }
+
+        input[type="text"],
+        input[type="number"]
+        {
+            width: 180px;
+            padding: 6px 8px;
+            border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+            border-radius: 4px;
+            background: var(--card-background-color, #fff);
+            color: var(--primary-text-color, #212121);
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        textarea
+        {
+            width: 100%;
+            min-height: 80px;
+            box-sizing: border-box;
+            padding: 6px 8px;
+            border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+            border-radius: 4px;
+            background: var(--card-background-color, #fff);
+            color: var(--primary-text-color, #212121);
+            font-size: 12px;
+            font-family:
+                ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+                Consolas, monospace;
+            resize: vertical;
+        }
+
+        /*  Two-button toggle, sized to match the other inputs so
+            the right-edge alignment stays consistent. */
+        .segmented-toggle
+        {
+            display: inline-flex;
+            width: 180px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+            background: var(--card-background-color, #fff);
+        }
+
+        .seg-option
+        {
+            flex: 1;
+            padding: 7px 10px;
+            background: transparent;
+            color: var(--primary-text-color, #212121);
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .seg-option + .seg-option
+        {
+            border-left: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+        }
+
+        .seg-option:hover:not(.active)
+        {
+            background: var(--secondary-background-color, rgba(0,0,0,0.04));
+        }
+
+        .seg-option.active
+        {
+            background: var(--primary-color, #8b5cf6);
+            color: var(--text-primary-color, #fff);
         }
     `;
 __decorateClass$1([
@@ -1751,17 +2143,32 @@ if (!window.customCards.some((c2) => c2.type === "hermes-card")) {
     }
   );
 }
+if (!window.customCards.some((c2) => c2.type === "hermes-mini-card")) {
+  window.customCards.push(
+    {
+      type: "hermes-mini-card",
+      name: _bootI18n.miniCardName,
+      description: _bootI18n.miniCardDescription,
+      preview: true
+    }
+  );
+}
 {
   const flagKey = "__hermesBannerPrinted";
   const w = window;
   if (!w[flagKey]) {
     w[flagKey] = true;
-    const labelStyle = "background:#8b5cf6;color:#0a0c10;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;";
-    const versionStyle = "background:#0a0c10;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;";
+    const labelStyle = "background:#8b5cf6;color:#1f2937;padding:2px 8px;border-radius:4px 0 0 4px;font-weight:bold;";
+    const versionStyle = "background:#1f2937;color:#8b5cf6;padding:2px 8px;border-radius:0 4px 4px 0;font-weight:bold;";
     console.info(
-      `%c⚡ HERMES%c v${HERMES_VERSION}`,
+      `%c☤ HERMES%c v${HERMES_VERSION}`,
       labelStyle,
       versionStyle
+    );
+    console.info(
+      `%c☤ HERMES%c watching every entity state change on this dashboard`,
+      labelStyle,
+      "color:#6b7280;font-style:italic;"
     );
   }
 }
@@ -1769,6 +2176,8 @@ const EMPTY_TOOLTIP = {
   visible: false,
   x: 0,
   y: 0,
+  place: "above",
+  arrowOffset: 0,
   pingId: 0,
   showCount: false,
   name: "",
@@ -1788,6 +2197,14 @@ const HIT_RADIUS_PAD = 6;
 const FADE_TAIL_FRAC = 0.18;
 const GLOBAL_PAD_X = 18;
 const GLOBAL_INNER_PAD = 8;
+const TOOLTIP_HALF_W = 110;
+const TOOLTIP_H = 110;
+const TOOLTIP_MARGIN = 8;
+const DEFAULT_PALETTE = {
+  text: "rgba(255,255,255,0.62)",
+  mute: "rgba(255,255,255,0.38)",
+  midline: "rgba(255,255,255,0.05)"
+};
 const LABEL_DOT_X = 12;
 const LABEL_DOT_R = 3.2;
 const LABEL_TEXT_START = 22;
@@ -1822,19 +2239,20 @@ let HermesCard = class extends i {
     this.globalH = 0;
     this.dpr = 1;
     this.handleResize = () => {
-      if (!this.stageEl || !this.stageCanvas || !this.spacerEl) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
       this.dpr = dpr;
-      const stageRect = this.stageEl.getBoundingClientRect();
-      const sw = Math.max(0, Math.floor(stageRect.width));
-      const sh = Math.max(0, Math.floor(stageRect.height));
-      if (sw !== this.stageW || sh !== this.stageH) {
-        this.stageW = sw;
-        this.stageH = sh;
-        this.stageCanvas.width = Math.max(1, Math.floor(sw * dpr));
-        this.stageCanvas.height = Math.max(1, Math.floor(sh * dpr));
-        this.stageCanvas.style.width = `${sw}px`;
-        this.stageCanvas.style.height = `${sh}px`;
+      if (this.stageEl && this.stageCanvas) {
+        const stageRect = this.stageEl.getBoundingClientRect();
+        const sw = Math.max(0, Math.floor(stageRect.width));
+        const sh = Math.max(0, Math.floor(stageRect.height));
+        if (sw !== this.stageW || sh !== this.stageH) {
+          this.stageW = sw;
+          this.stageH = sh;
+          this.stageCanvas.width = Math.max(1, Math.floor(sw * dpr));
+          this.stageCanvas.height = Math.max(1, Math.floor(sh * dpr));
+          this.stageCanvas.style.width = `${sw}px`;
+          this.stageCanvas.style.height = `${sh}px`;
+        }
       }
       if (this.globalCanvas && this.globalEl) {
         const grect = this.globalEl.getBoundingClientRect();
@@ -1904,6 +2322,18 @@ let HermesCard = class extends i {
       timespan_seconds: 300
     };
   }
+  //Stub config for the mini variant. Surfaced through
+  //HermesMiniCard.getStubConfig() so the HA card picker
+  //preview matches what the user will actually paint. Public
+  //so the subclass static can call it without going through
+  //a cast.
+  static miniStubConfig() {
+    return {
+      type: "custom:hermes-mini-card",
+      title: "Activity",
+      global_timespan_seconds: 30
+    };
+  }
   setConfig(config) {
     if (!config || typeof config !== "object") {
       throw new Error("Invalid configuration");
@@ -1930,14 +2360,25 @@ let HermesCard = class extends i {
     this._config = resolved;
     this.dirty = true;
   }
-  //Masonry sizing. 1 unit ≈ 50 px → 6 ≈ 300 px tall.
+  //Masonry sizing. 1 unit ≈ 50 px → 6 ≈ 300 px for the full
+  //card, 2 ≈ 100 px for the mini variant.
   getCardSize() {
-    return 6;
+    return this.isMini ? 2 : 6;
   }
-  //Sections grid sizing. 1 row ≈ 56 px; we default to 6 rows
-  //(≈ 340 px) at full section width, but allow up to 24 rows
-  //and let the user shrink to a 3-row chip.
+  //Sections grid sizing. 1 row ≈ 56 px. The full card defaults
+  //to 6 rows / full width; the mini variant collapses to a
+  //2-row strip with the same width budget.
   getGridOptions() {
+    if (this.isMini) {
+      return {
+        rows: 2,
+        columns: 12,
+        min_rows: 1,
+        max_rows: 4,
+        min_columns: 4,
+        max_columns: 12
+      };
+    }
     return {
       rows: 6,
       columns: 12,
@@ -2014,12 +2455,42 @@ let HermesCard = class extends i {
     }
   }
   //----- render -----
+  //Mini variant flag, dispatched on tag name so a single bundle
+  //ships both <hermes-card> and <hermes-mini-card>. Subclassed
+  //below at end of file with no extra logic - the override here
+  //is enough.
+  get isMini() {
+    return this.tagName.toLowerCase() === "hermes-mini-card";
+  }
   render() {
     const cfg = this._config;
     const tt = this._tooltip;
+    const themeClass = cfg.theme === "light" ? "theme-light" : "theme-dark";
+    const mini = this.isMini;
+    if (mini) {
+      return b`
+                <ha-card>
+                    <div class="root ${themeClass} mini">
+                        <div class="header">
+                            <div class="title">${cfg.title}</div>
+                            <div class="subtitle">
+                                ${this._entityCount} ${this._entityCount === 1 ? this._i18n.entity : this._i18n.entities}
+                            </div>
+                            <div class="spacer"></div>
+                            ${cfg.showLegend ? this.renderLegend() : A}
+                        </div>
+                        <div class="global mini">
+                            <canvas></canvas>
+                        </div>
+                        ${this._entityCount === 0 ? this.renderEmpty() : A}
+                        ${tt.visible ? this.renderTooltip(tt) : A}
+                    </div>
+                </ha-card>
+            `;
+    }
     return b`
             <ha-card>
-                <div class="root">
+                <div class="root ${themeClass}">
                     <div class="header">
                         <div class="title">${cfg.title}</div>
                         <div class="subtitle">
@@ -2085,10 +2556,12 @@ let HermesCard = class extends i {
         `;
   }
   renderTooltip(tt) {
+    const placeClass = tt.place === "below" ? "below" : "above";
+    const inlineStyle = `left:${tt.x}px;top:${tt.y}px;border-color:${withAlpha(tt.color, 0.4)};--hermes-arrow-offset:${tt.arrowOffset}px;`;
     return b`
             <div
-                class="tooltip visible"
-                style=${`left:${tt.x}px;top:${tt.y}px;border-color:${withAlpha(tt.color, 0.4)};`}
+                class="tooltip visible ${placeClass}"
+                style=${inlineStyle}
             >
                 <div class="tt-name" style=${`color:${tt.color};`}>${tt.name}</div>
                 <div class="tt-id">${tt.entityId}</div>
@@ -2156,20 +2629,40 @@ let HermesCard = class extends i {
     }
   }
   //----- paint -----
+  //Palette resolved once per frame from the theme CSS variables
+  //on .root. The renderer never reads colour-mode constants
+  //directly so flipping `card_theme` reskins the canvases on
+  //the next paint with no extra plumbing.
+  readPalette() {
+    if (!this.rootEl) {
+      return DEFAULT_PALETTE;
+    }
+    const cs = getComputedStyle(this.rootEl);
+    const get = (name, fallback) => {
+      const v2 = cs.getPropertyValue(name).trim();
+      return v2.length > 0 ? v2 : fallback;
+    };
+    return {
+      text: get("--hermes-canvas-text", DEFAULT_PALETTE.text),
+      mute: get("--hermes-canvas-mute", DEFAULT_PALETTE.mute),
+      midline: get("--hermes-midline", DEFAULT_PALETTE.midline)
+    };
+  }
   paint() {
     if (!this.engine) return;
     const snapshot = this.engine.getSnapshot();
     const hasMotion = snapshot.pings.length > 0;
     if (!hasMotion && !this.dirty) return;
     this.dirty = false;
+    const palette = this.readPalette();
     const totalContentHeight = this.computeTotalContentHeight(snapshot.lanes.length);
     if (this.spacerEl) {
       const spacerH = Math.max(0, totalContentHeight - this.stageH);
       this.spacerEl.style.height = `${Math.max(1, spacerH)}px`;
     }
     let tooltipUpdated = false;
-    const stageTooltip = this.paintStage(snapshot, totalContentHeight);
-    const globalTooltip = this._config.showGlobal ? this.paintGlobal(snapshot) : null;
+    const stageTooltip = this.paintStage(snapshot, totalContentHeight, palette);
+    const globalTooltip = this._config.showGlobal ? this.paintGlobal(snapshot, palette) : null;
     const winner = (this.globalMouse.x >= 0 ? globalTooltip : null) ?? (this.stageMouse.x >= 0 ? stageTooltip : null) ?? null;
     if (winner) {
       this._tooltip = winner;
@@ -2186,7 +2679,7 @@ let HermesCard = class extends i {
     if (laneCount === 0) return 0;
     return STAGE_PAD_TOP + laneCount * LANE_PITCH + STAGE_PAD_BOTTOM;
   }
-  paintStage(snapshot, totalContentHeight) {
+  paintStage(snapshot, totalContentHeight, palette) {
     const ctx = this.stageCtx;
     if (!ctx || this.stageW === 0 || this.stageH === 0) return null;
     const cfg = this._config;
@@ -2219,7 +2712,7 @@ let HermesCard = class extends i {
       const y3 = STAGE_PAD_TOP + i2 * LANE_PITCH + LANE_PITCH / 2 - scrollY;
       laneY.set(lane.entityId, { y: y3, color: lane.color, lane });
     }
-    this.drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW);
+    this.drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW, palette);
     const timespanMs = Math.max(1e3, cfg.timespanSeconds * 1e3);
     const now = snapshot.now;
     let bestHit = null;
@@ -2253,14 +2746,14 @@ let HermesCard = class extends i {
     }
     return null;
   }
-  paintGlobal(snapshot) {
+  paintGlobal(snapshot, palette) {
     const ctx = this.globalCtx;
     if (!ctx || this.globalW === 0 || this.globalH === 0) return null;
     const cfg = this._config;
     ctx.save();
     ctx.scale(this.dpr, this.dpr);
     ctx.clearRect(0, 0, this.globalW, this.globalH);
-    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.strokeStyle = palette.midline;
     ctx.lineWidth = 1;
     ctx.setLineDash([1.5, 4]);
     ctx.beginPath();
@@ -2306,11 +2799,11 @@ let HermesCard = class extends i {
     }
     return null;
   }
-  drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW) {
+  drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW, palette) {
     const labelFont = "500 11px " + getFontFamily();
     const valueFont = "400 10.5px " + getMonoFamily();
-    const dimColor = "rgba(255,255,255,0.62)";
-    const muteColor = "rgba(255,255,255,0.38)";
+    const dimColor = palette.text;
+    const muteColor = palette.mute;
     const nameMaxWidth = labelW > 0 ? Math.max(0, labelW - LABEL_TEXT_START - LABEL_COL_GAP / 2) : 0;
     const valueAnchorX = labelW + valueW - VALUE_RIGHT_PAD;
     const valueMaxWidth = Math.max(0, valueW - LABEL_COL_GAP / 2 - VALUE_RIGHT_PAD);
@@ -2376,17 +2869,31 @@ let HermesCard = class extends i {
   //Translate a (canvas-local) sphere position into a tooltip
   //placed in .root coordinates so the tooltip element (which
   //lives directly under .root) lines up correctly regardless of
-  //which canvas the ping came from.
+  //which canvas the ping came from. We clamp the bubble's
+  //horizontal centre to keep it inside the card, flip it below
+  //the sphere when there isn't enough room above, and forward
+  //the residual offset so the arrow still points at the ping.
   buildTooltipFromPing(p2, canvasX, canvasY, sourceCanvas, global) {
     const rootRect = this.rootEl?.getBoundingClientRect();
     const canvasRect = sourceCanvas.getBoundingClientRect();
-    const x2 = canvasRect.left - (rootRect?.left ?? 0) + canvasX;
-    const y3 = canvasRect.top - (rootRect?.top ?? 0) + canvasY;
+    const rootW = rootRect?.width ?? this.stageW;
+    const rootH = rootRect?.height ?? this.stageH;
+    const rawX = canvasRect.left - (rootRect?.left ?? 0) + canvasX;
+    const rawY = canvasRect.top - (rootRect?.top ?? 0) + canvasY;
+    const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
+    const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
+    const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
+    const arrowOffset = rawX - clampedX;
+    const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
+    const fitsBelow = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
+    const place = wantsAbove ? "above" : fitsBelow ? "below" : "above";
     const ageMs = Date.now() - p2.ts;
     return {
       visible: true,
-      x: Math.round(x2),
-      y: Math.round(y3),
+      x: Math.round(clampedX),
+      y: Math.round(rawY),
+      place,
+      arrowOffset: Math.round(arrowOffset),
       pingId: p2.id,
       showCount: global,
       name: p2.friendlyName,
@@ -2432,8 +2939,10 @@ function resolveConfig(cfg) {
   const showLabels = cfg.show_labels !== false;
   const labelWidth = showLabels ? clamp(cfg.label_width ?? 150, 0, 320) : 0;
   const valueWidth = clamp(cfg.value_width ?? 64, 0, 200);
+  const theme = cfg.card_theme === "light" ? "light" : "dark";
   return {
     title: (cfg.title ?? "Activity").trim() || "Activity",
+    theme,
     timespanSeconds: clamp(cfg.timespan_seconds ?? 300, 10, 24 * 3600),
     globalTimespanSeconds: clamp(cfg.global_timespan_seconds ?? 60, 5, 3600),
     globalHeight: clamp(cfg.global_height ?? 72, 32, 200),
@@ -2522,6 +3031,15 @@ function entityHash(id) {
   _entityHashCache.set(id, norm);
   return norm;
 }
+let HermesMiniCard = class extends HermesCard {
+  static getStubConfig() {
+    return HermesCard.miniStubConfig();
+  }
+};
+HermesMiniCard = __decorateClass([
+  t("hermes-mini-card")
+], HermesMiniCard);
 export {
-  HermesCard
+  HermesCard,
+  HermesMiniCard
 };
