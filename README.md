@@ -12,13 +12,16 @@ It's a companion piece to [HELIOS](https://github.com/ReikanYsora/Helios): same 
 
 ## At a glance
 
+* **Two timelines, one card**. A fast "guitar-hero" global strip at the top condenses every entity onto a single track, with sphere size scaling logarithmically against how often that entity has fired since the card was mounted. Below it, a slower per-entity stage assigns each entity its own lane.
 * **One sphere per state change**, dropped at the right edge the instant Home Assistant emits `state_changed`, then drifting left across the visible window.
 * **Colour by channel**, the palette groups domains into 17 visual families (binary, numeric, light, switch, climate, presence, weather, system, …) so the screen reads as a domain heatmap, not a wall of dots.
 * **Size by magnitude**, big swings produce bigger spheres. Numeric sensors are graded against their own rolling baseline so a `0.1 °C` flutter from a noisy thermometer stays quiet while a sudden jump still pops.
-* **Stable lanes**, each entity claims a horizontal lane on first sight and keeps it. The timeline never reshuffles under your eyes.
-* **Hover for context**, a discreet tooltip surfaces the entity friendly name, its current and previous value (with unit when available) and how long ago the change happened.
+* **Stable lanes + native scroll**, each entity claims a horizontal lane on first sight and keeps it; once you exceed what fits, the stage scrolls vertically with the canvas sticky to the top. The timeline never reshuffles under your eyes.
+* **Two-column labels**, name on the left, current value on the right, in separate fixed-width columns so a long entity name can never paint over its value.
+* **Hover for context**, a discreet tooltip surfaces the entity friendly name, the value it had at that exact moment, its previous value, how long ago the change happened, and (on the global strip) how many times this entity has changed since the card was mounted.
 * **Live legend**, only the channels that actually emitted a ping in the current session appear in the header, so the chrome stays quiet on lightly used dashboards.
-* **Lightweight**, single bundled ES module, no external CDN, no map, no WebGL. The renderer is a plain `<canvas>` with a `ResizeObserver`, so the card scales naturally to any HA layout (sidebar, grid, panel) and stays smooth on low-end devices.
+* **Dynamic sizing**, the card stretches to fill whatever its container hands it (sections grid, masonry, panel). No `height` knob in YAML.
+* **Lightweight**, single bundled ES module, no external CDN, no map, no WebGL. Two plain `<canvas>` elements with a `ResizeObserver`, smooth on low-end devices.
 
 ---
 
@@ -64,7 +67,7 @@ A more curated example:
 type: custom:hermes-card
 title: Ground floor
 timespan_seconds: 600
-height: 360
+global_timespan_seconds: 45
 entities:
   - binary_sensor.motion_*
   - light.kitchen
@@ -78,17 +81,22 @@ exclude_entities:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `title` | string | `Activity` | Header text on the top-left. |
-| `timespan_seconds` | int | `300` | Width of the visible window. A sphere takes this long to cross from right to left. |
-| `height` | int | `320` | Card height in pixels. Hermes resizes the stage to fit. |
-| `label_width` | int | `168` | Left gutter width for entity labels. Set to `0` (or `show_labels: false`) to hide the gutter. |
+| `timespan_seconds` | int | `300` | Width of the per-entity stage window. A sphere takes this long to cross from right to left in the lower stage. |
+| `global_timespan_seconds` | int | `60` | Width of the top global strip window. Shorter than `timespan_seconds` to produce the fast "guitar-hero" rhythm. |
+| `global_height` | int | `72` | Vertical height of the top global strip in pixels. |
+| `show_global` | bool | `true` | Show the top global activity strip. |
+| `label_width` | int | `150` | Width of the name column in the lower stage. Set to `0` (or `show_labels: false`) to hide both columns. |
+| `value_width` | int | `64` | Width of the (right-aligned) value column. Reserved separately from `label_width` so a long name never paints over the value. |
 | `show_legend` | bool | `true` | Show the per-channel legend in the header. Only emitting channels appear. |
-| `show_last_value` | bool | `true` | Show each entity's current state next to its label. |
+| `show_last_value` | bool | `true` | Show each entity's current state in the value column. |
 | `max_pings` | int | `2000` | Hard cap on retained pings (safety net against runaway emitters). |
 | `ignore_unavailable` | bool | `true` | Drop pings whose transition is just `unavailable` / `unknown` ↔ value. |
 | `entities` | list | – | Explicit list. Supports glob patterns (`light.*`, `sensor.*_temperature`). When set, only listed entities are tracked. |
 | `include_domains` | list | sensible default | Domain allow-list, used only when `entities` is empty. |
 | `exclude_entities` | list | – | Hard blocklist applied after the include rules. |
 | `exclude_domains` | list | – | Domain blocklist applied after the include rules. |
+
+> **Sizing.** Hermes fills its container vertically (sections grid, masonry, panel). To make it bigger, resize the card from the dashboard, not from YAML.
 
 ### Channel palette
 

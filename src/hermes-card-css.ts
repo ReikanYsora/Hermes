@@ -3,20 +3,30 @@ import { css } from 'lit';
 /*
  * Card styles.
  *
- * Kept in one file (rather than next to the component) so the
- * editor and any future variants can pick up the same visual
- * language without copy-pasting selectors. All sizes flex with
- * the parent ha-card; nothing here is pinned in pixels except
- * a few minimums that protect readability on tiny mobile cards.
+ * The layout is a three-band vertical stack inside ha-card:
  *
- * The look is intentionally restrained: near-black surface, soft
- * grain, low-contrast scaffolding, all the colour comes from the
- * pings the engine emits.
+ *   ┌───────────────────────────────┐
+ *   │ header (auto)                 │
+ *   ├───────────────────────────────┤
+ *   │ global timeline (fixed)       │
+ *   ├───────────────────────────────┤
+ *   │ stage (flex:1, overflow auto) │
+ *   │   - canvas sticky to top      │
+ *   │   - spacer for native scrollbar
+ *   └───────────────────────────────┘
+ *
+ * The card itself takes 100 % of whatever vertical space its
+ * container hands it (masonry, sections grid, panel mode), with a
+ * sensible min-height so a freshly-added card never paints into a
+ * zero-pixel box. The Helios card follows the same pattern.
  */
 export const hermesCardStyles = css`
     :host
     {
         display: block;
+        width:   100%;
+        height:  100%;
+
         --hermes-bg:           #0a0c10;
         --hermes-bg-grad-1:    #0c0f15;
         --hermes-bg-grad-2:    #07090c;
@@ -35,10 +45,10 @@ export const hermesCardStyles = css`
             Consolas, "Liberation Mono", monospace;
     }
 
-    .root
+    ha-card
     {
         position: relative;
-        width: 100%;
+        overflow: hidden;
         background: radial-gradient(
             120% 100% at 60% 0%,
             var(--hermes-bg-grad-1) 0%,
@@ -46,21 +56,35 @@ export const hermesCardStyles = css`
         );
         color: var(--hermes-fg);
         border-radius: var(--ha-card-border-radius, 14px);
-        overflow: hidden;
         font-family: var(--hermes-label-font);
         -webkit-font-smoothing: antialiased;
+        width:      100%;
+        height:     100%;
+        min-height: 220px;
+        /*  New stacking context so absolute children with z-index
+            stay scoped to the card. */
+        isolation: isolate;
         box-shadow:
             inset 0 0 0 1px rgba(255, 255, 255, 0.03),
             inset 0 -40px 80px -40px rgba(0, 0, 0, 0.6);
     }
 
+    .root
+    {
+        display:        flex;
+        flex-direction: column;
+        width:          100%;
+        height:         100%;
+        min-height:     0;
+    }
+
     .header
     {
+        flex: 0 0 auto;
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 14px 18px 10px 18px;
-        border-bottom: 1px solid var(--hermes-rule);
+        padding: 12px 18px 8px 18px;
     }
 
     .header .title
@@ -89,7 +113,7 @@ export const hermesCardStyles = css`
     {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px 10px;
+        gap: 4px 10px;
         font-size: 10.5px;
         color: var(--hermes-fg-dim);
         max-width: 60%;
@@ -112,15 +136,17 @@ export const hermesCardStyles = css`
         box-shadow: 0 0 6px currentColor;
     }
 
-    .stage
+    /*  Global timeline strip. Sits just under the header, on its
+        own canvas so the scrolling main stage cannot move it. */
+    .global
     {
+        flex: 0 0 auto;
         position: relative;
         width: 100%;
-        /* Default min height; the card resizes to host's height. */
-        min-height: 220px;
+        overflow: hidden;
     }
 
-    canvas
+    .global canvas
     {
         display: block;
         width: 100%;
@@ -129,10 +155,90 @@ export const hermesCardStyles = css`
         inset: 0;
     }
 
+    .divider
+    {
+        flex: 0 0 auto;
+        height: 1px;
+        background: linear-gradient(
+            to right,
+            transparent 0%,
+            var(--hermes-rule-strong) 16%,
+            var(--hermes-rule-strong) 84%,
+            transparent 100%
+        );
+        margin: 0 12px;
+    }
+
+    /*  Main stage. Scrolls vertically once the entity count
+        exceeds the visible height. The canvas inside uses
+        position:sticky so it stays pinned to the top of the
+        viewport while the inner spacer pushes the scrollbar to
+        expose the rest of the lanes - we render lanes with a
+        scrollTop offset, so only the visible window is painted
+        regardless of how tall the virtual content gets. */
+    .stage
+    {
+        flex: 1 1 auto;
+        position: relative;
+        width: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+
+    .stage::-webkit-scrollbar
+    {
+        width: 8px;
+    }
+
+    .stage::-webkit-scrollbar-track
+    {
+        background: transparent;
+    }
+
+    .stage::-webkit-scrollbar-thumb
+    {
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+    }
+
+    .stage::-webkit-scrollbar-thumb:hover
+    {
+        background: rgba(255, 255, 255, 0.24);
+    }
+
+    .stage-pin
+    {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .stage-pin canvas
+    {
+        display: block;
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        inset: 0;
+    }
+
+    .stage-spacer
+    {
+        width: 100%;
+        /*  Inline height set by the renderer. The 1px floor
+            avoids the scrollbar flashing when there are no
+            lanes yet. */
+        height: 1px;
+    }
+
     .tooltip
     {
         position: absolute;
-        z-index: 3;
+        z-index: 5;
         pointer-events: none;
         background: var(--hermes-tooltip-bg);
         backdrop-filter: blur(8px);
@@ -245,55 +351,5 @@ export const hermesCardStyles = css`
     {
         0%, 100% { opacity: 0.3; transform: scale(1);   }
         50%      { opacity: 0.9; transform: scale(1.6); }
-    }
-
-    /* Editor scaffolding kept here so it shares the same surface
-       look as the card itself. */
-    .editor
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        padding: 12px 0;
-        font-family: var(--hermes-label-font);
-    }
-
-    .editor .row
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .editor .row > label
-    {
-        font-size: 12px;
-        color: var(--secondary-text-color, #aaa);
-    }
-
-    .editor .row input,
-    .editor .row textarea
-    {
-        background: var(--card-background-color, #1c1f24);
-        color: var(--primary-text-color, #eee);
-        border: 1px solid var(--divider-color, #333);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font: inherit;
-    }
-
-    .editor .row textarea
-    {
-        min-height: 84px;
-        resize: vertical;
-        font-family: var(--hermes-mono-font);
-        font-size: 12px;
-    }
-
-    .editor .hint
-    {
-        font-size: 11px;
-        color: var(--secondary-text-color, #aaa);
-        line-height: 1.4;
     }
 `;

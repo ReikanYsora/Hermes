@@ -23,6 +23,7 @@ export interface Translation
     tooltipValue:     string;
     tooltipPrevious:  string;
     tooltipAgo:       string;
+    tooltipCount:     string;
     justNow:          string;
     unitSec:          string;
     unitMin:          string;
@@ -30,18 +31,21 @@ export interface Translation
 
     //Editor-only strings; lazy-evaluated so a card with no editor
     //in view still pays nothing for them.
-    editorTitle:        string;
-    editorTimespan:     string;
-    editorHeight:       string;
-    editorLabelWidth:   string;
-    editorShowLegend:   string;
-    editorShowLastValue:string;
-    editorMaxPings:     string;
-    editorEntities:     string;
-    editorEntitiesHint: string;
-    editorIncludeDomains: string;
-    editorExcludeEntities:string;
-    editorExcludeDomains: string;
+    editorTitle:             string;
+    editorTimespan:          string;
+    editorGlobalTimespan:    string;
+    editorGlobalHeight:      string;
+    editorShowGlobal:        string;
+    editorLabelWidth:        string;
+    editorValueWidth:        string;
+    editorShowLegend:        string;
+    editorShowLastValue:     string;
+    editorMaxPings:          string;
+    editorEntities:          string;
+    editorEntitiesHint:      string;
+    editorIncludeDomains:    string;
+    editorExcludeEntities:   string;
+    editorExcludeDomains:    string;
     editorIgnoreUnavailable: string;
 }
 

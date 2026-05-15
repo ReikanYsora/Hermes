@@ -106,7 +106,10 @@ export const DEFAULT_INCLUDE_DOMAINS: readonly string[] =
 
 //A single state change made visible. `id` is monotonic so the
 //renderer can use it as a stable key across animation frames
-//without rehashing entity + ts on every paint.
+//without rehashing entity + ts on every paint. `pingIndex` is the
+//ordinal of this ping for its own entity (1 = first ever, 2 =
+//second, ...) - the global timeline reads it to scale the sphere
+//up as an entity grows chattier across the session.
 export interface Ping
 {
     id:           number;
@@ -115,6 +118,7 @@ export interface Ping
     channel:      Channel;
     color:        HexColor;
     magnitude:    number;
+    pingIndex:    number;
     oldState:     string | null;
     newState:     string | null;
     unit:         string | null;
@@ -122,7 +126,10 @@ export interface Ping
 }
 
 //One row of the timeline. `laneIndex` is the slot the renderer
-//paints into, top to bottom, with no gaps.
+//paints into, top to bottom, with no gaps. `pingCount` is the
+//running total of pings recorded for this entity since the card
+//was mounted - exposed so the editor / header can surface the
+//chattiest entities.
 export interface Lane
 {
     entityId:     string;
@@ -133,6 +140,7 @@ export interface Lane
     lastPingTs:   number;
     lastState:    string | null;
     unit:         string | null;
+    pingCount:    number;
 }
 
 //Per-entity bookkeeping the engine keeps so magnitudeFor() can
@@ -483,7 +491,8 @@ export class HermesEngine
                 laneIndex:    this.nextLaneIndex++,
                 lastPingTs:   Date.now(),
                 lastState:    newRaw,
-                unit
+                unit,
+                pingCount:    0
             };
             this.lanes.set(entityId, lane);
         }
@@ -497,6 +506,8 @@ export class HermesEngine
             if (unit !== null) lane.unit = unit;
         }
 
+        lane.pingCount++;
+
         this.pings.push({
             id:           this.nextPingId++,
             entityId,
@@ -504,6 +515,7 @@ export class HermesEngine
             channel,
             color,
             magnitude,
+            pingIndex:    lane.pingCount,
             oldState:     oldRaw,
             newState:     newRaw,
             unit:         unit ?? lane.unit,

@@ -157,14 +157,26 @@ export class HermesCardEditor extends LitElement
                 </div>
 
                 <div class="row">
-                    <label>${i.editorHeight}</label>
+                    <label>${i.editorGlobalTimespan}</label>
                     <input
                         type="number"
-                        min="140"
-                        max="1200"
-                        step="10"
-                        .value=${String(c.height ?? 320)}
-                        @input=${(e: Event) => this._updateNum('height', (e.target as HTMLInputElement).value)}
+                        min="5"
+                        max="3600"
+                        step="5"
+                        .value=${String(c.global_timespan_seconds ?? 60)}
+                        @input=${(e: Event) => this._updateNum('global_timespan_seconds', (e.target as HTMLInputElement).value)}
+                    />
+                </div>
+
+                <div class="row">
+                    <label>${i.editorGlobalHeight}</label>
+                    <input
+                        type="number"
+                        min="32"
+                        max="200"
+                        step="4"
+                        .value=${String(c.global_height ?? 72)}
+                        @input=${(e: Event) => this._updateNum('global_height', (e.target as HTMLInputElement).value)}
                     />
                 </div>
 
@@ -175,8 +187,20 @@ export class HermesCardEditor extends LitElement
                         min="0"
                         max="320"
                         step="4"
-                        .value=${String(c.label_width ?? 168)}
+                        .value=${String(c.label_width ?? 150)}
                         @input=${(e: Event) => this._updateNum('label_width', (e.target as HTMLInputElement).value)}
+                    />
+                </div>
+
+                <div class="row">
+                    <label>${i.editorValueWidth}</label>
+                    <input
+                        type="number"
+                        min="0"
+                        max="200"
+                        step="4"
+                        .value=${String(c.value_width ?? 64)}
+                        @input=${(e: Event) => this._updateNum('value_width', (e.target as HTMLInputElement).value)}
                     />
                 </div>
 
@@ -192,9 +216,10 @@ export class HermesCardEditor extends LitElement
                     />
                 </div>
 
-                ${this._toggleRow(i.editorShowLegend,        'show_legend',         c.show_legend         !== false)}
-                ${this._toggleRow(i.editorShowLastValue,     'show_last_value',     c.show_last_value     !== false)}
-                ${this._toggleRow(i.editorIgnoreUnavailable, 'ignore_unavailable',  c.ignore_unavailable  !== false)}
+                ${this._toggleRow(i.editorShowGlobal,         'show_global',         c.show_global         !== false)}
+                ${this._toggleRow(i.editorShowLegend,         'show_legend',         c.show_legend         !== false)}
+                ${this._toggleRow(i.editorShowLastValue,      'show_last_value',     c.show_last_value     !== false)}
+                ${this._toggleRow(i.editorIgnoreUnavailable,  'ignore_unavailable',  c.ignore_unavailable  !== false)}
 
                 <div class="row wide">
                     <label>${i.editorEntities}</label>

@@ -72,32 +72,43 @@ if (!window.customCards.some(c => c.type === 'hermes-card'))
 
 //YAML config exposed to users. Everything optional, everything
 //has a sensible default. The visual editor mirrors this list.
+//
+//`height` is intentionally absent: the card stretches to fill
+//whatever its container hands it, matching Helios. Users size
+//Hermes via the sections grid / masonry / panel layout in HA
+//itself, not from the card YAML.
 export interface HermesCardConfig
 {
-    type:                 'custom:hermes-card';
-    title?:               string;
-    timespan_seconds?:    number;
-    height?:              number;   //pixels for the stage; ha-card still wraps it
-    label_width?:         number;   //pixels, left gutter for entity labels; 0 hides
-    show_labels?:         boolean;  //convenience boolean equivalent to label_width: 0
-    show_legend?:         boolean;
-    show_last_value?:     boolean;
-    max_pings?:           number;
-    ignore_unavailable?:  boolean;
-    entities?:            string[];
-    include_domains?:     string[];
-    exclude_entities?:    string[];
-    exclude_domains?:     string[];
+    type:                     'custom:hermes-card';
+    title?:                   string;
+    timespan_seconds?:        number;
+    global_timespan_seconds?: number;
+    global_height?:           number;
+    label_width?:             number;   //pixels, name column width
+    value_width?:             number;   //pixels, value column width (right of name)
+    show_labels?:             boolean;
+    show_legend?:             boolean;
+    show_last_value?:         boolean;
+    show_global?:             boolean;
+    max_pings?:               number;
+    ignore_unavailable?:      boolean;
+    entities?:                string[];
+    include_domains?:         string[];
+    exclude_entities?:        string[];
+    exclude_domains?:         string[];
 }
 
 interface ResolvedConfig
 {
     title:               string;
     timespanSeconds:     number;
-    height:              number;
+    globalTimespanSeconds: number;
+    globalHeight:        number;
     labelWidth:          number;
+    valueWidth:          number;
     showLegend:          boolean;
     showLastValue:       boolean;
+    showGlobal:          boolean;
     maxPings:            number;
     ignoreUnavailable:   boolean;
     entities?:           string[];
@@ -108,51 +119,66 @@ interface ResolvedConfig
 
 interface TooltipState
 {
-    visible:   boolean;
-    x:         number;
-    y:         number;
-    pingId:    number;
-    name:      string;
-    entityId:  string;
-    value:     string;
-    previous:  string;
-    ago:       string;
-    color:     HexColor;
+    visible:    boolean;
+    x:          number;     //in .root coords
+    y:          number;
+    pingId:     number;
+    showCount:  boolean;    //true when tooltip is sourced from the global strip
+    name:       string;
+    entityId:   string;
+    value:      string;
+    previous:   string;
+    ago:        string;
+    count:      number;
+    color:      HexColor;
 }
 
 const EMPTY_TOOLTIP: TooltipState =
 {
-    visible:  false,
-    x:        0,
-    y:        0,
-    pingId:   0,
-    name:     '',
-    entityId: '',
-    value:    '',
-    previous: '',
-    ago:      '',
-    color:    '#94A3B8'
+    visible:   false,
+    x:         0,
+    y:         0,
+    pingId:    0,
+    showCount: false,
+    name:      '',
+    entityId:  '',
+    value:     '',
+    previous:  '',
+    ago:       '',
+    count:     0,
+    color:     '#94A3B8'
 };
 
-//Layout constants. Sub-pixel-able so the renderer doesn't need
-//to round per-frame to look crisp on hi-DPI screens.
-const STAGE_PAD_TOP     = 14;
-const STAGE_PAD_BOTTOM  = 14;
-const STAGE_PAD_RIGHT   = 18;
-const LANE_GAP          = 2;
-const MIN_LANE_HEIGHT   = 22;
-const MAX_LANE_HEIGHT   = 56;
-const HIT_RADIUS_PAD    = 6;   //extra px around a ping's radius when hit-testing
-const FADE_TAIL_FRAC    = 0.18; //last 18 % of the timespan fades out
+//Layout constants. The lane pitch is fixed (not stretched to
+//fill the stage) so the visual rhythm stays steady regardless of
+//how many entities are tracked; once the entities overflow, the
+//stage scrolls.
+const STAGE_PAD_TOP    = 6;
+const STAGE_PAD_BOTTOM = 6;
+const STAGE_PAD_RIGHT  = 18;
+const LANE_PITCH       = 30;
+const LANE_INNER       = 26;     //usable height inside a lane (sphere reach)
+const HIT_RADIUS_PAD   = 6;
+const FADE_TAIL_FRAC   = 0.18;
+
+const GLOBAL_PAD_X     = 18;
+const GLOBAL_INNER_PAD = 8;      //top/bottom padding inside the global strip
+
+//Two-column label gutter geometry. The columns themselves have
+//no visible separator, but their widths are reserved so the value
+//can never paint into the name's text box, no matter how long the
+//name is.
+const LABEL_DOT_X      = 12;
+const LABEL_DOT_R      = 3.2;
+const LABEL_TEXT_START = 22;     //LABEL_DOT_X + LABEL_DOT_R + small gap
+const LABEL_COL_GAP    = 10;     //space between name col and value col
+const VALUE_RIGHT_PAD  = 10;     //inner right padding so the value never kisses the lane
 
 @customElement('hermes-card')
 export class HermesCard extends LitElement
 {
     static override styles = hermesCardStyles;
 
-    //HA hands us a fresh `hass` whenever a state changes. We
-    //only care for connection swaps, so we re-bind the engine
-    //lazily in updated().
     @property({ attribute: false }) hass?: HassLike;
 
     @state() private _config: ResolvedConfig = resolveConfig({ type: 'custom:hermes-card' });
@@ -163,20 +189,34 @@ export class HermesCard extends LitElement
     private engine: HermesEngine | null = null;
     private engineUnsubscribe: (() => void) | null = null;
 
-    private canvas: HTMLCanvasElement | null = null;
-    private ctx: CanvasRenderingContext2D | null = null;
+    //DOM handles, wired in updated() once the shadow root has
+    //rendered.
+    private rootEl: HTMLDivElement | null = null;
     private stageEl: HTMLDivElement | null = null;
+    private stageCanvas: HTMLCanvasElement | null = null;
+    private stageCtx: CanvasRenderingContext2D | null = null;
+    private globalEl: HTMLDivElement | null = null;
+    private globalCanvas: HTMLCanvasElement | null = null;
+    private globalCtx: CanvasRenderingContext2D | null = null;
+    private spacerEl: HTMLDivElement | null = null;
     private resizeObserver: ResizeObserver | null = null;
 
     private rafHandle: number = 0;
     private dirty = true;
-    private mouseX = -1;
-    private mouseY = -1;
 
-    //Backing-store size in CSS px and devicePixelRatio. Recomputed
-    //by the ResizeObserver; the renderer reads them once per frame.
-    private stageWidth = 0;
-    private stageHeight = 0;
+    //Mouse coords kept per-canvas so the hit-test of each strip
+    //runs against the cursor inside its own frame.
+    private stageMouse: { x: number; y: number } = { x: -1, y: -1 };
+    private globalMouse: { x: number; y: number } = { x: -1, y: -1 };
+
+    private stageScrollY = 0;
+
+    //Backing-store sizes, in CSS px, recomputed by the resize
+    //observer.
+    private stageW = 0;
+    private stageH = 0;
+    private globalW = 0;
+    private globalH = 0;
     private dpr = 1;
 
     //----- HA card contract -----
@@ -204,12 +244,9 @@ export class HermesCard extends LitElement
 
         const resolved = resolveConfig(config);
 
-        //Recreate the engine on first config, otherwise just
-        //push the new filters through so existing pings keep
-        //flowing without a flicker.
         const engineCfg: HermesEngineConfig =
         {
-            timespan_seconds:   resolved.timespanSeconds,
+            timespan_seconds:   Math.max(resolved.timespanSeconds, resolved.globalTimespanSeconds),
             max_pings:          resolved.maxPings,
             ignore_unavailable: resolved.ignoreUnavailable,
             entities:           resolved.entities,
@@ -236,11 +273,32 @@ export class HermesCard extends LitElement
         this.dirty = true;
     }
 
-    //Used by the masonry layout to pre-size the card before
-    //first paint. Roughly one row per ~50 px.
+    //Masonry sizing. 1 unit ≈ 50 px → 6 ≈ 300 px tall.
     getCardSize(): number
     {
-        return Math.max(3, Math.round(this._config.height / 50));
+        return 6;
+    }
+
+    //Sections grid sizing. 1 row ≈ 56 px; we default to 6 rows
+    //(≈ 340 px) at full section width, but allow up to 24 rows
+    //and let the user shrink to a 3-row chip.
+    getGridOptions(): {
+        rows:        number;
+        columns:     number;
+        min_rows:    number;
+        max_rows:    number;
+        min_columns: number;
+        max_columns: number;
+    }
+    {
+        return {
+            rows:        6,
+            columns:     12,
+            min_rows:    3,
+            max_rows:    24,
+            min_columns: 6,
+            max_columns: 12
+        };
     }
 
     //----- lifecycle -----
@@ -249,8 +307,6 @@ export class HermesCard extends LitElement
     {
         super.connectedCallback();
 
-        //Pick localisation as soon as we can read the HA
-        //language. Default to the boot i18n until then.
         if (typeof navigator !== 'undefined')
         {
             this._i18n = pickTranslations(navigator.language);
@@ -271,35 +327,63 @@ export class HermesCard extends LitElement
         this.engine?.unbind();
 
         this.stopRaf();
-        this.teardownObserver();
+        this.teardownDom();
     }
 
     override updated(changed: PropertyValues): void
     {
         super.updated(changed);
 
-        //Wire DOM-bound dependencies after the first render.
+        if (!this.rootEl)
+        {
+            this.rootEl = this.renderRoot.querySelector('.root') as HTMLDivElement | null;
+        }
         if (!this.stageEl)
         {
             this.stageEl = this.renderRoot.querySelector('.stage') as HTMLDivElement | null;
-        }
-        if (!this.canvas)
-        {
-            this.canvas = this.renderRoot.querySelector('canvas') as HTMLCanvasElement | null;
-            if (this.canvas)
+            if (this.stageEl)
             {
-                this.ctx = this.canvas.getContext('2d', { alpha: true });
-                this.canvas.addEventListener('mousemove', this.handleMouseMove);
-                this.canvas.addEventListener('mouseleave', this.handleMouseLeave);
-                this.canvas.addEventListener('touchstart', this.handleTouch, { passive: true });
-                this.canvas.addEventListener('touchmove', this.handleTouch, { passive: true });
-                this.canvas.addEventListener('touchend', this.handleMouseLeave);
+                this.stageEl.addEventListener('scroll', this.handleScroll, { passive: true });
             }
         }
-        if (!this.resizeObserver && this.stageEl)
+        if (!this.spacerEl)
+        {
+            this.spacerEl = this.renderRoot.querySelector('.stage-spacer') as HTMLDivElement | null;
+        }
+        if (!this.stageCanvas)
+        {
+            this.stageCanvas = this.renderRoot.querySelector('.stage-pin canvas') as HTMLCanvasElement | null;
+            if (this.stageCanvas)
+            {
+                this.stageCtx = this.stageCanvas.getContext('2d', { alpha: true });
+                this.stageCanvas.addEventListener('mousemove', this.handleStageMouseMove);
+                this.stageCanvas.addEventListener('mouseleave', this.handleStageMouseLeave);
+                this.stageCanvas.addEventListener('touchstart', this.handleStageTouch, { passive: true });
+                this.stageCanvas.addEventListener('touchmove', this.handleStageTouch, { passive: true });
+                this.stageCanvas.addEventListener('touchend', this.handleStageMouseLeave);
+            }
+        }
+        if (!this.globalEl)
+        {
+            this.globalEl = this.renderRoot.querySelector('.global') as HTMLDivElement | null;
+        }
+        if (!this.globalCanvas)
+        {
+            this.globalCanvas = this.renderRoot.querySelector('.global canvas') as HTMLCanvasElement | null;
+            if (this.globalCanvas)
+            {
+                this.globalCtx = this.globalCanvas.getContext('2d', { alpha: true });
+                this.globalCanvas.addEventListener('mousemove', this.handleGlobalMouseMove);
+                this.globalCanvas.addEventListener('mouseleave', this.handleGlobalMouseLeave);
+                this.globalCanvas.addEventListener('touchstart', this.handleGlobalTouch, { passive: true });
+                this.globalCanvas.addEventListener('touchmove', this.handleGlobalTouch, { passive: true });
+                this.globalCanvas.addEventListener('touchend', this.handleGlobalMouseLeave);
+            }
+        }
+        if (!this.resizeObserver && this.rootEl)
         {
             this.resizeObserver = new ResizeObserver(() => this.handleResize());
-            this.resizeObserver.observe(this.stageEl);
+            this.resizeObserver.observe(this.rootEl);
             this.handleResize();
         }
 
@@ -318,7 +402,7 @@ export class HermesCard extends LitElement
 
         return html`
             <ha-card>
-                <div class="root" style=${`height:${cfg.height}px;`}>
+                <div class="root">
                     <div class="header">
                         <div class="title">${cfg.title}</div>
                         <div class="subtitle">
@@ -327,11 +411,23 @@ export class HermesCard extends LitElement
                         <div class="spacer"></div>
                         ${cfg.showLegend ? this.renderLegend() : nothing}
                     </div>
+
+                    ${cfg.showGlobal ? html`
+                        <div class="global" style=${`height:${cfg.globalHeight}px;`}>
+                            <canvas></canvas>
+                        </div>
+                        <div class="divider"></div>
+                    ` : nothing}
+
                     <div class="stage">
-                        <canvas></canvas>
-                        ${this._entityCount === 0 ? this.renderEmpty() : nothing}
-                        ${tt.visible ? this.renderTooltip(tt) : nothing}
+                        <div class="stage-pin">
+                            <canvas></canvas>
+                        </div>
+                        <div class="stage-spacer"></div>
                     </div>
+
+                    ${this._entityCount === 0 ? this.renderEmpty() : nothing}
+                    ${tt.visible ? this.renderTooltip(tt) : nothing}
                 </div>
             </ha-card>
         `;
@@ -408,23 +504,126 @@ export class HermesCard extends LitElement
                     <span class="label">${this._i18n.tooltipAgo}</span>
                     <span class="value">${tt.ago}</span>
                 </div>
+                ${tt.showCount ? html`
+                    <div class="tt-row">
+                        <span class="label">${this._i18n.tooltipCount}</span>
+                        <span class="value">${tt.count}</span>
+                    </div>` : nothing}
                 <div class="tt-arrow"></div>
             </div>
         `;
     }
 
-    //----- canvas / animation -----
+    //----- event handlers -----
+
+    private handleResize = (): void =>
+    {
+        if (!this.stageEl || !this.stageCanvas || !this.spacerEl) return;
+
+        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        this.dpr = dpr;
+
+        //Stage canvas: viewport size (sticky inside the scroll
+        //container).
+        const stageRect = this.stageEl.getBoundingClientRect();
+        const sw = Math.max(0, Math.floor(stageRect.width));
+        const sh = Math.max(0, Math.floor(stageRect.height));
+
+        if (sw !== this.stageW || sh !== this.stageH)
+        {
+            this.stageW = sw;
+            this.stageH = sh;
+            this.stageCanvas.width  = Math.max(1, Math.floor(sw * dpr));
+            this.stageCanvas.height = Math.max(1, Math.floor(sh * dpr));
+            this.stageCanvas.style.width  = `${sw}px`;
+            this.stageCanvas.style.height = `${sh}px`;
+        }
+
+        //Global canvas: same width, fixed height from config.
+        if (this.globalCanvas && this.globalEl)
+        {
+            const grect = this.globalEl.getBoundingClientRect();
+            const gw = Math.max(0, Math.floor(grect.width));
+            const gh = Math.max(0, Math.floor(grect.height));
+            if (gw !== this.globalW || gh !== this.globalH)
+            {
+                this.globalW = gw;
+                this.globalH = gh;
+                this.globalCanvas.width  = Math.max(1, Math.floor(gw * dpr));
+                this.globalCanvas.height = Math.max(1, Math.floor(gh * dpr));
+                this.globalCanvas.style.width  = `${gw}px`;
+                this.globalCanvas.style.height = `${gh}px`;
+            }
+        }
+
+        this.dirty = true;
+    };
+
+    private handleScroll = (): void =>
+    {
+        if (!this.stageEl) return;
+        this.stageScrollY = this.stageEl.scrollTop;
+        this.dirty = true;
+    };
+
+    private handleStageMouseMove = (ev: MouseEvent): void =>
+    {
+        if (!this.stageCanvas) return;
+        const r = this.stageCanvas.getBoundingClientRect();
+        this.stageMouse = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+        this.dirty = true;
+    };
+
+    private handleStageMouseLeave = (): void =>
+    {
+        this.stageMouse = { x: -1, y: -1 };
+        this.maybeHideTooltip('stage');
+        this.dirty = true;
+    };
+
+    private handleStageTouch = (ev: TouchEvent): void =>
+    {
+        if (!ev.touches.length || !this.stageCanvas) return;
+        const t = ev.touches[0];
+        const r = this.stageCanvas.getBoundingClientRect();
+        this.stageMouse = { x: t.clientX - r.left, y: t.clientY - r.top };
+        this.dirty = true;
+    };
+
+    private handleGlobalMouseMove = (ev: MouseEvent): void =>
+    {
+        if (!this.globalCanvas) return;
+        const r = this.globalCanvas.getBoundingClientRect();
+        this.globalMouse = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+        this.dirty = true;
+    };
+
+    private handleGlobalMouseLeave = (): void =>
+    {
+        this.globalMouse = { x: -1, y: -1 };
+        this.maybeHideTooltip('global');
+        this.dirty = true;
+    };
+
+    private handleGlobalTouch = (ev: TouchEvent): void =>
+    {
+        if (!ev.touches.length || !this.globalCanvas) return;
+        const t = ev.touches[0];
+        const r = this.globalCanvas.getBoundingClientRect();
+        this.globalMouse = { x: t.clientX - r.left, y: t.clientY - r.top };
+        this.dirty = true;
+    };
+
+    //----- animation loop -----
 
     private startRaf(): void
     {
         if (this.rafHandle !== 0) return;
-
         const loop = () =>
         {
             this.rafHandle = requestAnimationFrame(loop);
             this.paint();
         };
-
         this.rafHandle = requestAnimationFrame(loop);
     }
 
@@ -442,168 +641,180 @@ export class HermesCard extends LitElement
         this.dirty = true;
     }
 
-    private teardownObserver(): void
+    private teardownDom(): void
     {
         if (this.resizeObserver)
         {
             this.resizeObserver.disconnect();
             this.resizeObserver = null;
         }
-        if (this.canvas)
+        if (this.stageEl)
         {
-            this.canvas.removeEventListener('mousemove', this.handleMouseMove);
-            this.canvas.removeEventListener('mouseleave', this.handleMouseLeave);
-            this.canvas.removeEventListener('touchstart', this.handleTouch);
-            this.canvas.removeEventListener('touchmove', this.handleTouch);
-            this.canvas.removeEventListener('touchend', this.handleMouseLeave);
+            this.stageEl.removeEventListener('scroll', this.handleScroll);
+        }
+        if (this.stageCanvas)
+        {
+            this.stageCanvas.removeEventListener('mousemove', this.handleStageMouseMove);
+            this.stageCanvas.removeEventListener('mouseleave', this.handleStageMouseLeave);
+            this.stageCanvas.removeEventListener('touchstart', this.handleStageTouch);
+            this.stageCanvas.removeEventListener('touchmove', this.handleStageTouch);
+            this.stageCanvas.removeEventListener('touchend', this.handleStageMouseLeave);
+        }
+        if (this.globalCanvas)
+        {
+            this.globalCanvas.removeEventListener('mousemove', this.handleGlobalMouseMove);
+            this.globalCanvas.removeEventListener('mouseleave', this.handleGlobalMouseLeave);
+            this.globalCanvas.removeEventListener('touchstart', this.handleGlobalTouch);
+            this.globalCanvas.removeEventListener('touchmove', this.handleGlobalTouch);
+            this.globalCanvas.removeEventListener('touchend', this.handleGlobalMouseLeave);
         }
     }
 
-    private handleResize = (): void =>
-    {
-        if (!this.stageEl || !this.canvas) return;
-
-        const rect = this.stageEl.getBoundingClientRect();
-        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-
-        const w = Math.max(0, Math.floor(rect.width));
-        const h = Math.max(0, Math.floor(rect.height));
-
-        if (this.stageWidth === w && this.stageHeight === h && this.dpr === dpr)
-        {
-            return;
-        }
-
-        this.stageWidth = w;
-        this.stageHeight = h;
-        this.dpr = dpr;
-
-        this.canvas.width  = Math.max(1, Math.floor(w * dpr));
-        this.canvas.height = Math.max(1, Math.floor(h * dpr));
-        this.canvas.style.width  = `${w}px`;
-        this.canvas.style.height = `${h}px`;
-
-        this.dirty = true;
-    };
-
-    private handleMouseMove = (ev: MouseEvent): void =>
-    {
-        const rect = (ev.currentTarget as HTMLCanvasElement).getBoundingClientRect();
-        this.mouseX = ev.clientX - rect.left;
-        this.mouseY = ev.clientY - rect.top;
-        this.dirty = true;
-    };
-
-    private handleMouseLeave = (): void =>
-    {
-        this.mouseX = -1;
-        this.mouseY = -1;
-        if (this._tooltip.visible)
-        {
-            this._tooltip = EMPTY_TOOLTIP;
-        }
-        this.dirty = true;
-    };
-
-    private handleTouch = (ev: TouchEvent): void =>
-    {
-        if (!ev.touches.length || !this.canvas) return;
-        const t = ev.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        this.mouseX = t.clientX - rect.left;
-        this.mouseY = t.clientY - rect.top;
-        this.dirty = true;
-    };
+    //----- paint -----
 
     private paint(): void
     {
-        if (!this.ctx || !this.canvas || !this.engine) return;
-        if (this.stageWidth === 0 || this.stageHeight === 0) return;
+        if (!this.engine) return;
 
-        //Active pings need a fresh frame because they're moving.
-        //If everything is static we still want to refresh the
-        //tooltip when the mouse moves, so we honour the `dirty`
-        //flag set by event handlers.
         const snapshot = this.engine.getSnapshot();
         const hasMotion = snapshot.pings.length > 0;
         if (!hasMotion && !this.dirty) return;
         this.dirty = false;
 
-        const ctx = this.ctx;
+        //Sync the inner spacer's height so the scrollbar reflects
+        //the true content extent. The pinned canvas already takes
+        //one viewport's worth of vertical space (it's sticky and
+        //height:100%), so the spacer only needs to provide the
+        //*overflow* beyond the viewport.
+        const totalContentHeight = this.computeTotalContentHeight(snapshot.lanes.length);
+        if (this.spacerEl)
+        {
+            const spacerH = Math.max(0, totalContentHeight - this.stageH);
+            this.spacerEl.style.height = `${Math.max(1, spacerH)}px`;
+        }
+
+        let tooltipUpdated = false;
+        const stageTooltip = this.paintStage(snapshot, totalContentHeight);
+        const globalTooltip = this._config.showGlobal ? this.paintGlobal(snapshot) : null;
+
+        //Resolve tooltip precedence: whichever canvas the cursor
+        //is currently over wins. If both are over (shouldn't
+        //normally happen), the global strip wins since it's on
+        //top of the layout.
+        const winner = (this.globalMouse.x >= 0 ? globalTooltip : null)
+                    ?? (this.stageMouse.x >= 0 ? stageTooltip : null)
+                    ?? null;
+
+        if (winner)
+        {
+            this._tooltip = winner;
+            tooltipUpdated = true;
+        }
+        else if (this._tooltip.visible)
+        {
+            this._tooltip = EMPTY_TOOLTIP;
+            tooltipUpdated = true;
+        }
+
+        //Tooltip movement during static scenes still needs a
+        //repaint so the loop doesn't stall against `dirty=false`.
+        if (tooltipUpdated)
+        {
+            this.dirty = true;
+        }
+    }
+
+    private computeTotalContentHeight(laneCount: number): number
+    {
+        if (laneCount === 0) return 0;
+        return STAGE_PAD_TOP + laneCount * LANE_PITCH + STAGE_PAD_BOTTOM;
+    }
+
+    private paintStage(snapshot: ReturnType<HermesEngine['getSnapshot']>, totalContentHeight: number): TooltipState | null
+    {
+        const ctx = this.stageCtx;
+        if (!ctx || this.stageW === 0 || this.stageH === 0) return null;
+
         const cfg = this._config;
 
         ctx.save();
         ctx.scale(this.dpr, this.dpr);
-        ctx.clearRect(0, 0, this.stageWidth, this.stageHeight);
+        ctx.clearRect(0, 0, this.stageW, this.stageH);
 
-        //Layout: vertical lanes, capped to MAX/MIN heights so we
-        //read like a heartbeat trace at any card size.
-        const lanes = snapshot.lanes;
-        const laneCount = Math.max(1, lanes.length);
-        const labelW = cfg.labelWidth;
-        const innerLeft   = labelW;
-        const innerRight  = this.stageWidth - STAGE_PAD_RIGHT;
-        const innerTop    = STAGE_PAD_TOP;
-        const innerBottom = this.stageHeight - STAGE_PAD_BOTTOM;
-        const innerHeight = Math.max(0, innerBottom - innerTop);
-        const innerWidth  = Math.max(0, innerRight - innerLeft);
+        const labelW    = cfg.labelWidth;
+        const valueW    = cfg.showLastValue ? cfg.valueWidth : 0;
+        const gutterW   = labelW > 0 ? labelW + valueW : 0;
+        const innerLeft  = gutterW;
+        const innerRight = this.stageW - STAGE_PAD_RIGHT;
+        const innerWidth = Math.max(0, innerRight - innerLeft);
 
-        let laneHeight = innerHeight / laneCount - LANE_GAP;
-        laneHeight = Math.max(MIN_LANE_HEIGHT, Math.min(MAX_LANE_HEIGHT, laneHeight));
+        //The virtual content extends from y = 0 to y =
+        //totalContentHeight. The scroller has scrolled the user
+        //by `stageScrollY`, so we draw with that offset.
+        const scrollY = clamp(
+            this.stageScrollY,
+            0,
+            Math.max(0, totalContentHeight - this.stageH)
+        );
 
-        const usedHeight = laneHeight * laneCount + LANE_GAP * (laneCount - 1);
-        const yStart = innerTop + Math.max(0, (innerHeight - usedHeight) / 2);
+        //Cull lanes that are not on screen so the hit-test and
+        //the paint stay cheap regardless of how many entities are
+        //tracked.
+        const firstLane = Math.max(
+            0,
+            Math.floor((scrollY - STAGE_PAD_TOP) / LANE_PITCH)
+        );
+        const lastLane = Math.min(
+            snapshot.lanes.length - 1,
+            Math.ceil((scrollY + this.stageH - STAGE_PAD_TOP) / LANE_PITCH)
+        );
 
-        //Resolve each entity to a (y, h) box so the renderer
-        //doesn't recompute it twice (lane track + ping draw).
-        const laneByEntity = new Map<string, { y: number; h: number; color: HexColor; lane: Lane }>();
-        for (let i = 0; i < lanes.length; i++)
+        //Pre-compute Y for visible lanes so the ping loop doesn't
+        //have to redo it for every sphere.
+        const laneY = new Map<string, { y: number; color: HexColor; lane: Lane }>();
+        for (let i = firstLane; i <= lastLane; i++)
         {
-            const lane = lanes[i];
-            const y = yStart + i * (laneHeight + LANE_GAP) + laneHeight / 2;
-            laneByEntity.set(lane.entityId, { y, h: laneHeight, color: lane.color, lane });
+            const lane = snapshot.lanes[i];
+            if (!lane) continue;
+            const y = STAGE_PAD_TOP + i * LANE_PITCH + LANE_PITCH / 2 - scrollY;
+            laneY.set(lane.entityId, { y, color: lane.color, lane });
         }
 
-        //Dashed lane tracks + entity labels.
-        this.drawLaneTracks(ctx, lanes, laneByEntity, innerLeft, innerRight, labelW);
+        //Draw the dashed lane tracks + two-column labels.
+        this.drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW);
 
-        //Pings, oldest first so newer ones glow over older ones.
-        const timespanMs = snapshot.timespanMs;
+        //Now the pings, oldest first so newer ones glow over
+        //older ones.
+        const timespanMs = Math.max(1000, cfg.timespanSeconds * 1000);
         const now = snapshot.now;
 
-        //We accumulate the best hit-tested ping so the tooltip
-        //picks the closest visible sphere instead of the one
-        //drawn last.
         let bestHit: { ping: Ping; dist: number; x: number; y: number; r: number } | null = null;
 
         for (let i = 0; i < snapshot.pings.length; i++)
         {
             const p = snapshot.pings[i];
-            const lane = laneByEntity.get(p.entityId);
-            if (!lane) continue;
+            const slot = laneY.get(p.entityId);
+            if (!slot) continue;  //lane off-screen
 
             const ageMs = now - p.ts;
-            const frac = ageMs / timespanMs;  //0 = just emitted, 1 = at left edge
+            const frac = ageMs / timespanMs;
             if (frac < 0 || frac > 1) continue;
 
             const x = innerRight - frac * innerWidth;
-            const y = lane.y;
+            const y = slot.y;
 
-            const baseR = lane.h * 0.34;
+            const baseR = LANE_INNER * 0.34;
             const r = Math.max(2.5, baseR * (0.5 + p.magnitude * 0.6));
 
-            //Fade only the last sliver of the timeline so the
-            //bulk of the run keeps full presence.
             const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
             const alpha = 1 - tailFrac;
 
             this.drawPing(ctx, x, y, r, p.color, alpha);
 
-            //Hit test against the cursor.
-            if (this.mouseX >= 0)
+            if (this.stageMouse.x >= 0)
             {
-                const dx = x - this.mouseX;
-                const dy = y - this.mouseY;
+                const dx = x - this.stageMouse.x;
+                const dy = y - this.stageMouse.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 const reach = r + HIT_RADIUS_PAD;
                 if (dist <= reach && (!bestHit || dist < bestHit.dist))
@@ -615,88 +826,169 @@ export class HermesCard extends LitElement
 
         ctx.restore();
 
-        //Tooltip update. Doing this after paint() means the
-        //tooltip lags one frame behind a fast mouse, which is
-        //imperceptible at 60 fps but keeps the loop tight.
-        if (bestHit)
+        if (bestHit && this.stageCanvas)
         {
-            this.setTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, bestHit.r);
+            return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.stageCanvas, false);
         }
-        else if (this._tooltip.visible)
+        return null;
+    }
+
+    private paintGlobal(snapshot: ReturnType<HermesEngine['getSnapshot']>): TooltipState | null
+    {
+        const ctx = this.globalCtx;
+        if (!ctx || this.globalW === 0 || this.globalH === 0) return null;
+
+        const cfg = this._config;
+
+        ctx.save();
+        ctx.scale(this.dpr, this.dpr);
+        ctx.clearRect(0, 0, this.globalW, this.globalH);
+
+        //Subtle midline so the strip reads as a track, not a
+        //random blob field.
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([1.5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(GLOBAL_PAD_X, this.globalH / 2);
+        ctx.lineTo(this.globalW - GLOBAL_PAD_X, this.globalH / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const innerLeft  = GLOBAL_PAD_X;
+        const innerRight = this.globalW - GLOBAL_PAD_X;
+        const innerWidth = Math.max(0, innerRight - innerLeft);
+
+        const timespanMs = Math.max(500, cfg.globalTimespanSeconds * 1000);
+        const now = snapshot.now;
+
+        //Cap on radius reserves a margin below the strip edges.
+        const maxR = Math.min(14, (this.globalH - GLOBAL_INNER_PAD * 2) * 0.45);
+        const baseR = 1.8;
+        const jitterRange = (this.globalH / 2) - GLOBAL_INNER_PAD - maxR;
+        const centreY = this.globalH / 2;
+
+        let bestHit: { ping: Ping; dist: number; x: number; y: number; r: number } | null = null;
+
+        for (let i = 0; i < snapshot.pings.length; i++)
         {
-            this._tooltip = EMPTY_TOOLTIP;
+            const p = snapshot.pings[i];
+            const ageMs = now - p.ts;
+            const frac = ageMs / timespanMs;
+            if (frac < 0 || frac > 1) continue;
+
+            const x = innerRight - frac * innerWidth;
+
+            //Stable Y per entity so the same entity always pings
+            //on the same vertical track. The hash is a hot loop,
+            //so we cache it on `entityYCache` between frames.
+            const h = entityHash(p.entityId);
+            const y = centreY + (h - 0.5) * 2 * Math.max(0, jitterRange);
+
+            //Radius scales with the ping ordinal: every new ping
+            //for an entity gets a slightly larger sphere than the
+            //previous, up to maxR. Log scale so a sensor pinging
+            //a thousand times doesn't dominate.
+            const r = Math.min(maxR, baseR + Math.log2(p.pingIndex + 1) * 1.6);
+
+            const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
+            const alpha = 1 - tailFrac;
+
+            this.drawPing(ctx, x, y, r, p.color, alpha);
+
+            if (this.globalMouse.x >= 0)
+            {
+                const dx = x - this.globalMouse.x;
+                const dy = y - this.globalMouse.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const reach = r + HIT_RADIUS_PAD;
+                if (dist <= reach && (!bestHit || dist < bestHit.dist))
+                {
+                    bestHit = { ping: p, dist, x, y, r };
+                }
+            }
         }
+
+        ctx.restore();
+
+        if (bestHit && this.globalCanvas)
+        {
+            return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.globalCanvas, true);
+        }
+        return null;
     }
 
     private drawLaneTracks(
-        ctx:           CanvasRenderingContext2D,
-        lanes:         readonly Lane[],
-        laneByEntity:  Map<string, { y: number; h: number; color: HexColor; lane: Lane }>,
-        innerLeft:     number,
-        innerRight:    number,
-        labelW:        number
+        ctx:         CanvasRenderingContext2D,
+        laneY:       Map<string, { y: number; color: HexColor; lane: Lane }>,
+        innerLeft:   number,
+        innerRight:  number,
+        labelW:      number,
+        valueW:      number
     ): void
     {
-        const cfg = this._config;
         const labelFont = '500 11px ' + getFontFamily();
         const valueFont = '400 10.5px ' + getMonoFamily();
-        const dimColor = 'rgba(255,255,255,0.55)';
-        const muteColor = 'rgba(255,255,255,0.35)';
+        const dimColor  = 'rgba(255,255,255,0.62)';
+        const muteColor = 'rgba(255,255,255,0.38)';
+
+        const nameMaxWidth = labelW > 0
+            ? Math.max(0, labelW - LABEL_TEXT_START - LABEL_COL_GAP / 2)
+            : 0;
+        const valueAnchorX = labelW + valueW - VALUE_RIGHT_PAD;
+        const valueMaxWidth = Math.max(0, valueW - LABEL_COL_GAP / 2 - VALUE_RIGHT_PAD);
 
         ctx.lineWidth = 1;
-        ctx.setLineDash([1.5, 4]);
 
-        for (const lane of lanes)
+        for (const slot of laneY.values())
         {
-            const slot = laneByEntity.get(lane.entityId);
-            if (!slot) continue;
+            const lane = slot.lane;
 
-            //Lane separator: a soft dashed rule on the lane's
-            //centreline, tinted with the channel colour so the
-            //timeline reads as channel-grouped even when empty.
+            //Soft dashed track on the centreline tinted with the
+            //channel colour.
+            ctx.setLineDash([1.5, 4]);
             ctx.strokeStyle = withAlpha(lane.color, 0.18);
             ctx.beginPath();
             ctx.moveTo(innerLeft, slot.y);
             ctx.lineTo(innerRight, slot.y);
             ctx.stroke();
+            ctx.setLineDash([]);
 
             if (labelW > 0)
             {
-                //Channel-coloured dot to the left of the label.
-                ctx.setLineDash([]);
+                //Channel-coloured dot.
                 ctx.fillStyle = lane.color;
                 ctx.beginPath();
-                ctx.arc(12, slot.y, 3.2, 0, Math.PI * 2);
+                ctx.arc(LABEL_DOT_X, slot.y, LABEL_DOT_R, 0, Math.PI * 2);
                 ctx.fill();
 
+                //Name column.
                 ctx.fillStyle = dimColor;
                 ctx.font = labelFont;
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'left';
                 ctx.fillText(
-                    clipText(ctx, lane.friendlyName, labelW - 26 - (cfg.showLastValue ? 48 : 0)),
-                    22,
+                    clipText(ctx, lane.friendlyName, nameMaxWidth),
+                    LABEL_TEXT_START,
                     slot.y
                 );
 
-                if (cfg.showLastValue && lane.lastState !== null)
+                //Value column (right-aligned, separate width
+                //budget so it cannot collide with the name).
+                if (valueW > 0 && lane.lastState !== null)
                 {
                     ctx.fillStyle = muteColor;
                     ctx.font = valueFont;
                     ctx.textAlign = 'right';
                     const valueStr = formatLaneValue(lane.lastState, lane.unit);
                     ctx.fillText(
-                        clipText(ctx, valueStr, 60),
-                        labelW - 8,
+                        clipText(ctx, valueStr, valueMaxWidth),
+                        valueAnchorX,
                         slot.y
                     );
                 }
-
-                ctx.setLineDash([1.5, 4]);
             }
         }
-
-        ctx.setLineDash([]);
     }
 
     private drawPing(
@@ -708,10 +1000,6 @@ export class HermesCard extends LitElement
         alpha: number
     ): void
     {
-        //Halo + body. A radial gradient gives the sphere a soft
-        //bloom that reads as "energy" against the dark plate, and
-        //the additive layering means clusters of recent pings
-        //naturally brighten without us having to special-case it.
         const haloR = r * 2.8;
         const gradient = ctx.createRadialGradient(x, y, 0, x, y, haloR);
         gradient.addColorStop(0,    withAlpha(color, 0.55 * alpha));
@@ -730,51 +1018,61 @@ export class HermesCard extends LitElement
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
 
-        //Bright pinprick centre to give the sphere a focal
-        //highlight; small enough that it disappears on tiny
-        //magnitude pings without us thresholding.
         ctx.fillStyle = `rgba(255, 255, 255, ${0.65 * alpha})`;
         ctx.beginPath();
         ctx.arc(x - r * 0.25, y - r * 0.25, Math.max(0.6, r * 0.18), 0, Math.PI * 2);
         ctx.fill();
     }
 
-    private setTooltipFromPing(p: Ping, x: number, y: number, _r: number): void
+    //Translate a (canvas-local) sphere position into a tooltip
+    //placed in .root coordinates so the tooltip element (which
+    //lives directly under .root) lines up correctly regardless of
+    //which canvas the ping came from.
+    private buildTooltipFromPing(
+        p:           Ping,
+        canvasX:     number,
+        canvasY:     number,
+        sourceCanvas: HTMLCanvasElement,
+        global:      boolean
+    ): TooltipState
     {
+        const rootRect = this.rootEl?.getBoundingClientRect();
+        const canvasRect = sourceCanvas.getBoundingClientRect();
+
+        const x = (canvasRect.left - (rootRect?.left ?? 0)) + canvasX;
+        const y = (canvasRect.top - (rootRect?.top ?? 0)) + canvasY;
+
         const ageMs = Date.now() - p.ts;
-        const ago = formatAgo(ageMs, this._i18n);
 
-        const valueStr = formatLaneValue(p.newState, p.unit);
-        const prevStr  = p.oldState !== null ? formatLaneValue(p.oldState, p.unit) : '';
-
-        const next: TooltipState =
-        {
-            visible:  true,
-            x:        Math.round(x),
-            y:        Math.round(y),
-            pingId:   p.id,
-            name:     p.friendlyName,
-            entityId: p.entityId,
-            value:    valueStr,
-            previous: prevStr,
-            ago,
-            color:    p.color
+        return {
+            visible:   true,
+            x:         Math.round(x),
+            y:         Math.round(y),
+            pingId:    p.id,
+            showCount: global,
+            name:      p.friendlyName,
+            entityId:  p.entityId,
+            value:     formatLaneValue(p.newState, p.unit),
+            previous:  p.oldState !== null ? formatLaneValue(p.oldState, p.unit) : '',
+            ago:       formatAgo(ageMs, this._i18n),
+            count:     p.pingIndex,
+            color:     p.color
         };
+    }
 
-        //Avoid re-rendering when nothing changed (mouse hovering
-        //the same ping for several frames).
-        if (
-            this._tooltip.pingId === next.pingId &&
-            this._tooltip.x === next.x &&
-            this._tooltip.y === next.y &&
-            this._tooltip.value === next.value &&
-            this._tooltip.ago === next.ago
-        )
+    //When one strip loses the mouse we only drop the tooltip if
+    //it was being driven by *that* strip; otherwise we'd flicker
+    //away a tooltip the other canvas is actively showing.
+    private maybeHideTooltip(source: 'stage' | 'global'): void
+    {
+        if (!this._tooltip.visible) return;
+
+        const driverIsGlobal = this._tooltip.showCount;
+        if ((source === 'global' && driverIsGlobal) ||
+            (source === 'stage'  && !driverIsGlobal))
         {
-            return;
+            this._tooltip = EMPTY_TOOLTIP;
         }
-
-        this._tooltip = next;
     }
 }
 
@@ -783,21 +1081,25 @@ export class HermesCard extends LitElement
 function resolveConfig(cfg: HermesCardConfig): ResolvedConfig
 {
     const showLabels = cfg.show_labels !== false;
-    const labelWidth = showLabels ? clamp(cfg.label_width ?? 168, 0, 320) : 0;
+    const labelWidth = showLabels ? clamp(cfg.label_width ?? 150, 0, 320) : 0;
+    const valueWidth = clamp(cfg.value_width ?? 64, 0, 200);
 
     return {
-        title:             (cfg.title ?? 'Activity').trim() || 'Activity',
-        timespanSeconds:   clamp(cfg.timespan_seconds ?? 300, 10, 24 * 3600),
-        height:            clamp(cfg.height ?? 320, 140, 1200),
+        title:                  (cfg.title ?? 'Activity').trim() || 'Activity',
+        timespanSeconds:        clamp(cfg.timespan_seconds ?? 300, 10, 24 * 3600),
+        globalTimespanSeconds:  clamp(cfg.global_timespan_seconds ?? 60, 5, 3600),
+        globalHeight:           clamp(cfg.global_height ?? 72, 32, 200),
         labelWidth,
-        showLegend:        cfg.show_legend !== false,
-        showLastValue:     cfg.show_last_value !== false,
-        maxPings:          clamp(cfg.max_pings ?? 2000, 50, 20000),
-        ignoreUnavailable: cfg.ignore_unavailable !== false,
-        entities:          arrOrUndef(cfg.entities),
-        includeDomains:    arrOrUndef(cfg.include_domains) ?? [...DEFAULT_INCLUDE_DOMAINS],
-        excludeEntities:   arrOrUndef(cfg.exclude_entities),
-        excludeDomains:    arrOrUndef(cfg.exclude_domains)
+        valueWidth,
+        showLegend:             cfg.show_legend !== false,
+        showLastValue:          cfg.show_last_value !== false,
+        showGlobal:             cfg.show_global !== false,
+        maxPings:               clamp(cfg.max_pings ?? 2000, 50, 20000),
+        ignoreUnavailable:      cfg.ignore_unavailable !== false,
+        entities:               arrOrUndef(cfg.entities),
+        includeDomains:         arrOrUndef(cfg.include_domains) ?? [...DEFAULT_INCLUDE_DOMAINS],
+        excludeEntities:        arrOrUndef(cfg.exclude_entities),
+        excludeDomains:         arrOrUndef(cfg.exclude_domains)
     };
 }
 
@@ -814,10 +1116,6 @@ function clamp(v: number, lo: number, hi: number): number
     return v < lo ? lo : v > hi ? hi : v;
 }
 
-//Convert a "#RRGGBB" + 0..1 alpha into an rgba() string. The
-//tooltip border, lane separators and ping halos all need this
-//and the alternative (parsing on every call) is slower than
-//just doing the substring slice once.
 function withAlpha(hex: HexColor, alpha: number): string
 {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -828,10 +1126,8 @@ function withAlpha(hex: HexColor, alpha: number): string
 
 function clipText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string
 {
-    if (maxWidth <= 0 || ctx.measureText(text).width <= maxWidth)
-    {
-        return text;
-    }
+    if (maxWidth <= 0) return '';
+    if (ctx.measureText(text).width <= maxWidth) return text;
 
     const ellipsis = '…';
     let lo = 0;
@@ -870,10 +1166,6 @@ function formatLaneValue(state: string | null, unit: string | null): string
 
 function formatNumber(n: number): string
 {
-    if (Math.abs(n) >= 1000)
-    {
-        return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
-    }
     if (Math.abs(n) >= 10)
     {
         return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -897,4 +1189,25 @@ function getFontFamily(): string
 function getMonoFamily(): string
 {
     return 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+}
+
+//Stable FNV-1a-style hash → [0, 1) used to assign each entity a
+//repeatable vertical track on the global strip. Same input always
+//maps to the same output so a sensor's spheres stack on a single
+//line instead of jittering across the row on every ping.
+const _entityHashCache = new Map<string, number>();
+function entityHash(id: string): number
+{
+    const cached = _entityHashCache.get(id);
+    if (cached !== undefined) return cached;
+
+    let h = 2166136261;
+    for (let i = 0; i < id.length; i++)
+    {
+        h ^= id.charCodeAt(i);
+        h = (h * 16777619) >>> 0;
+    }
+    const norm = h / 4294967296;
+    _entityHashCache.set(id, norm);
+    return norm;
 }

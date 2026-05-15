@@ -942,7 +942,8 @@ class HermesEngine {
         laneIndex: this.nextLaneIndex++,
         lastPingTs: Date.now(),
         lastState: newRaw,
-        unit
+        unit,
+        pingCount: 0
       };
       this.lanes.set(entityId, lane);
     } else {
@@ -953,6 +954,7 @@ class HermesEngine {
       lane.lastState = newRaw;
       if (unit !== null) lane.unit = unit;
     }
+    lane.pingCount++;
     this.pings.push({
       id: this.nextPingId++,
       entityId,
@@ -960,6 +962,7 @@ class HermesEngine {
       channel,
       color,
       magnitude,
+      pingIndex: lane.pingCount,
       oldState: oldRaw,
       newState: newRaw,
       unit: unit ?? lane.unit,
@@ -1017,11 +1020,14 @@ function isConnectivityBlip(oldRaw, newRaw) {
 function isMissingState(s2) {
   return s2 === null || s2 === "" || s2 === "unavailable" || s2 === "unknown";
 }
-const HERMES_VERSION = "0.1.0";
+const HERMES_VERSION = "0.2.0";
 const hermesCardStyles = i$3`
     :host
     {
         display: block;
+        width:   100%;
+        height:  100%;
+
         --hermes-bg:           #0a0c10;
         --hermes-bg-grad-1:    #0c0f15;
         --hermes-bg-grad-2:    #07090c;
@@ -1040,10 +1046,10 @@ const hermesCardStyles = i$3`
             Consolas, "Liberation Mono", monospace;
     }
 
-    .root
+    ha-card
     {
         position: relative;
-        width: 100%;
+        overflow: hidden;
         background: radial-gradient(
             120% 100% at 60% 0%,
             var(--hermes-bg-grad-1) 0%,
@@ -1051,21 +1057,35 @@ const hermesCardStyles = i$3`
         );
         color: var(--hermes-fg);
         border-radius: var(--ha-card-border-radius, 14px);
-        overflow: hidden;
         font-family: var(--hermes-label-font);
         -webkit-font-smoothing: antialiased;
+        width:      100%;
+        height:     100%;
+        min-height: 220px;
+        /*  New stacking context so absolute children with z-index
+            stay scoped to the card. */
+        isolation: isolate;
         box-shadow:
             inset 0 0 0 1px rgba(255, 255, 255, 0.03),
             inset 0 -40px 80px -40px rgba(0, 0, 0, 0.6);
     }
 
+    .root
+    {
+        display:        flex;
+        flex-direction: column;
+        width:          100%;
+        height:         100%;
+        min-height:     0;
+    }
+
     .header
     {
+        flex: 0 0 auto;
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 14px 18px 10px 18px;
-        border-bottom: 1px solid var(--hermes-rule);
+        padding: 12px 18px 8px 18px;
     }
 
     .header .title
@@ -1094,7 +1114,7 @@ const hermesCardStyles = i$3`
     {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px 10px;
+        gap: 4px 10px;
         font-size: 10.5px;
         color: var(--hermes-fg-dim);
         max-width: 60%;
@@ -1117,15 +1137,17 @@ const hermesCardStyles = i$3`
         box-shadow: 0 0 6px currentColor;
     }
 
-    .stage
+    /*  Global timeline strip. Sits just under the header, on its
+        own canvas so the scrolling main stage cannot move it. */
+    .global
     {
+        flex: 0 0 auto;
         position: relative;
         width: 100%;
-        /* Default min height; the card resizes to host's height. */
-        min-height: 220px;
+        overflow: hidden;
     }
 
-    canvas
+    .global canvas
     {
         display: block;
         width: 100%;
@@ -1134,10 +1156,90 @@ const hermesCardStyles = i$3`
         inset: 0;
     }
 
+    .divider
+    {
+        flex: 0 0 auto;
+        height: 1px;
+        background: linear-gradient(
+            to right,
+            transparent 0%,
+            var(--hermes-rule-strong) 16%,
+            var(--hermes-rule-strong) 84%,
+            transparent 100%
+        );
+        margin: 0 12px;
+    }
+
+    /*  Main stage. Scrolls vertically once the entity count
+        exceeds the visible height. The canvas inside uses
+        position:sticky so it stays pinned to the top of the
+        viewport while the inner spacer pushes the scrollbar to
+        expose the rest of the lanes - we render lanes with a
+        scrollTop offset, so only the visible window is painted
+        regardless of how tall the virtual content gets. */
+    .stage
+    {
+        flex: 1 1 auto;
+        position: relative;
+        width: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+
+    .stage::-webkit-scrollbar
+    {
+        width: 8px;
+    }
+
+    .stage::-webkit-scrollbar-track
+    {
+        background: transparent;
+    }
+
+    .stage::-webkit-scrollbar-thumb
+    {
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+    }
+
+    .stage::-webkit-scrollbar-thumb:hover
+    {
+        background: rgba(255, 255, 255, 0.24);
+    }
+
+    .stage-pin
+    {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .stage-pin canvas
+    {
+        display: block;
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        inset: 0;
+    }
+
+    .stage-spacer
+    {
+        width: 100%;
+        /*  Inline height set by the renderer. The 1px floor
+            avoids the scrollbar flashing when there are no
+            lanes yet. */
+        height: 1px;
+    }
+
     .tooltip
     {
         position: absolute;
-        z-index: 3;
+        z-index: 5;
         pointer-events: none;
         background: var(--hermes-tooltip-bg);
         backdrop-filter: blur(8px);
@@ -1251,56 +1353,6 @@ const hermesCardStyles = i$3`
         0%, 100% { opacity: 0.3; transform: scale(1);   }
         50%      { opacity: 0.9; transform: scale(1.6); }
     }
-
-    /* Editor scaffolding kept here so it shares the same surface
-       look as the card itself. */
-    .editor
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        padding: 12px 0;
-        font-family: var(--hermes-label-font);
-    }
-
-    .editor .row
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .editor .row > label
-    {
-        font-size: 12px;
-        color: var(--secondary-text-color, #aaa);
-    }
-
-    .editor .row input,
-    .editor .row textarea
-    {
-        background: var(--card-background-color, #1c1f24);
-        color: var(--primary-text-color, #eee);
-        border: 1px solid var(--divider-color, #333);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font: inherit;
-    }
-
-    .editor .row textarea
-    {
-        min-height: 84px;
-        resize: vertical;
-        font-family: var(--hermes-mono-font);
-        font-size: 12px;
-    }
-
-    .editor .hint
-    {
-        font-size: 11px;
-        color: var(--secondary-text-color, #aaa);
-        line-height: 1.4;
-    }
 `;
 const en = {
   cardName: "Hermes",
@@ -1312,16 +1364,20 @@ const en = {
   tooltipValue: "Value",
   tooltipPrevious: "Previous",
   tooltipAgo: "Seen",
+  tooltipCount: "Changes",
   justNow: "just now",
   unitSec: "s ago",
   unitMin: "min ago",
   unitHour: "h ago",
   editorTitle: "Title",
-  editorTimespan: "Visible window (seconds)",
-  editorHeight: "Card height (px)",
-  editorLabelWidth: "Label gutter (px, 0 to hide)",
+  editorTimespan: "Main window (seconds)",
+  editorGlobalTimespan: "Global strip window (seconds)",
+  editorGlobalHeight: "Global strip height (px)",
+  editorShowGlobal: "Show global activity strip",
+  editorLabelWidth: "Name column width (px, 0 to hide)",
+  editorValueWidth: "Value column width (px)",
   editorShowLegend: "Show legend",
-  editorShowLastValue: "Show last value next to label",
+  editorShowLastValue: "Show last value next to name",
   editorMaxPings: "Max retained pings",
   editorEntities: "Entities (one per line, supports * and ?)",
   editorEntitiesHint: "Leave empty to track all entities in the allowed domains below.",
@@ -1340,16 +1396,20 @@ const fr = {
   tooltipValue: "Valeur",
   tooltipPrevious: "Précédente",
   tooltipAgo: "Vu",
+  tooltipCount: "Changements",
   justNow: "à l'instant",
   unitSec: "s",
   unitMin: "min",
   unitHour: "h",
   editorTitle: "Titre",
-  editorTimespan: "Fenêtre visible (secondes)",
-  editorHeight: "Hauteur de la carte (px)",
-  editorLabelWidth: "Marge des libellés (px, 0 pour masquer)",
+  editorTimespan: "Fenêtre principale (secondes)",
+  editorGlobalTimespan: "Fenêtre de la bande globale (secondes)",
+  editorGlobalHeight: "Hauteur de la bande globale (px)",
+  editorShowGlobal: "Afficher la bande d'activité globale",
+  editorLabelWidth: "Largeur de la colonne nom (px, 0 pour masquer)",
+  editorValueWidth: "Largeur de la colonne valeur (px)",
   editorShowLegend: "Afficher la légende",
-  editorShowLastValue: "Afficher la dernière valeur près du libellé",
+  editorShowLastValue: "Afficher la dernière valeur près du nom",
   editorMaxPings: "Pings retenus (max)",
   editorEntities: "Entités (une par ligne, * et ? acceptés)",
   editorEntitiesHint: "Laissez vide pour suivre toutes les entités des domaines autorisés ci-dessous.",
@@ -1422,14 +1482,26 @@ let HermesCardEditor = class extends i {
                 </div>
 
                 <div class="row">
-                    <label>${i2.editorHeight}</label>
+                    <label>${i2.editorGlobalTimespan}</label>
                     <input
                         type="number"
-                        min="140"
-                        max="1200"
-                        step="10"
-                        .value=${String(c2.height ?? 320)}
-                        @input=${(e2) => this._updateNum("height", e2.target.value)}
+                        min="5"
+                        max="3600"
+                        step="5"
+                        .value=${String(c2.global_timespan_seconds ?? 60)}
+                        @input=${(e2) => this._updateNum("global_timespan_seconds", e2.target.value)}
+                    />
+                </div>
+
+                <div class="row">
+                    <label>${i2.editorGlobalHeight}</label>
+                    <input
+                        type="number"
+                        min="32"
+                        max="200"
+                        step="4"
+                        .value=${String(c2.global_height ?? 72)}
+                        @input=${(e2) => this._updateNum("global_height", e2.target.value)}
                     />
                 </div>
 
@@ -1440,8 +1512,20 @@ let HermesCardEditor = class extends i {
                         min="0"
                         max="320"
                         step="4"
-                        .value=${String(c2.label_width ?? 168)}
+                        .value=${String(c2.label_width ?? 150)}
                         @input=${(e2) => this._updateNum("label_width", e2.target.value)}
+                    />
+                </div>
+
+                <div class="row">
+                    <label>${i2.editorValueWidth}</label>
+                    <input
+                        type="number"
+                        min="0"
+                        max="200"
+                        step="4"
+                        .value=${String(c2.value_width ?? 64)}
+                        @input=${(e2) => this._updateNum("value_width", e2.target.value)}
                     />
                 </div>
 
@@ -1457,6 +1541,7 @@ let HermesCardEditor = class extends i {
                     />
                 </div>
 
+                ${this._toggleRow(i2.editorShowGlobal, "show_global", c2.show_global !== false)}
                 ${this._toggleRow(i2.editorShowLegend, "show_legend", c2.show_legend !== false)}
                 ${this._toggleRow(i2.editorShowLastValue, "show_last_value", c2.show_last_value !== false)}
                 ${this._toggleRow(i2.editorIgnoreUnavailable, "ignore_unavailable", c2.ignore_unavailable !== false)}
@@ -1685,21 +1770,29 @@ const EMPTY_TOOLTIP = {
   x: 0,
   y: 0,
   pingId: 0,
+  showCount: false,
   name: "",
   entityId: "",
   value: "",
   previous: "",
   ago: "",
+  count: 0,
   color: "#94A3B8"
 };
-const STAGE_PAD_TOP = 14;
-const STAGE_PAD_BOTTOM = 14;
+const STAGE_PAD_TOP = 6;
+const STAGE_PAD_BOTTOM = 6;
 const STAGE_PAD_RIGHT = 18;
-const LANE_GAP = 2;
-const MIN_LANE_HEIGHT = 22;
-const MAX_LANE_HEIGHT = 56;
+const LANE_PITCH = 30;
+const LANE_INNER = 26;
 const HIT_RADIUS_PAD = 6;
 const FADE_TAIL_FRAC = 0.18;
+const GLOBAL_PAD_X = 18;
+const GLOBAL_INNER_PAD = 8;
+const LABEL_DOT_X = 12;
+const LABEL_DOT_R = 3.2;
+const LABEL_TEXT_START = 22;
+const LABEL_COL_GAP = 10;
+const VALUE_RIGHT_PAD = 10;
 let HermesCard = class extends i {
   constructor() {
     super(...arguments);
@@ -1709,55 +1802,94 @@ let HermesCard = class extends i {
     this._i18n = _bootI18n;
     this.engine = null;
     this.engineUnsubscribe = null;
-    this.canvas = null;
-    this.ctx = null;
+    this.rootEl = null;
     this.stageEl = null;
+    this.stageCanvas = null;
+    this.stageCtx = null;
+    this.globalEl = null;
+    this.globalCanvas = null;
+    this.globalCtx = null;
+    this.spacerEl = null;
     this.resizeObserver = null;
     this.rafHandle = 0;
     this.dirty = true;
-    this.mouseX = -1;
-    this.mouseY = -1;
-    this.stageWidth = 0;
-    this.stageHeight = 0;
+    this.stageMouse = { x: -1, y: -1 };
+    this.globalMouse = { x: -1, y: -1 };
+    this.stageScrollY = 0;
+    this.stageW = 0;
+    this.stageH = 0;
+    this.globalW = 0;
+    this.globalH = 0;
     this.dpr = 1;
     this.handleResize = () => {
-      if (!this.stageEl || !this.canvas) return;
-      const rect = this.stageEl.getBoundingClientRect();
+      if (!this.stageEl || !this.stageCanvas || !this.spacerEl) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-      const w = Math.max(0, Math.floor(rect.width));
-      const h2 = Math.max(0, Math.floor(rect.height));
-      if (this.stageWidth === w && this.stageHeight === h2 && this.dpr === dpr) {
-        return;
-      }
-      this.stageWidth = w;
-      this.stageHeight = h2;
       this.dpr = dpr;
-      this.canvas.width = Math.max(1, Math.floor(w * dpr));
-      this.canvas.height = Math.max(1, Math.floor(h2 * dpr));
-      this.canvas.style.width = `${w}px`;
-      this.canvas.style.height = `${h2}px`;
-      this.dirty = true;
-    };
-    this.handleMouseMove = (ev) => {
-      const rect = ev.currentTarget.getBoundingClientRect();
-      this.mouseX = ev.clientX - rect.left;
-      this.mouseY = ev.clientY - rect.top;
-      this.dirty = true;
-    };
-    this.handleMouseLeave = () => {
-      this.mouseX = -1;
-      this.mouseY = -1;
-      if (this._tooltip.visible) {
-        this._tooltip = EMPTY_TOOLTIP;
+      const stageRect = this.stageEl.getBoundingClientRect();
+      const sw = Math.max(0, Math.floor(stageRect.width));
+      const sh = Math.max(0, Math.floor(stageRect.height));
+      if (sw !== this.stageW || sh !== this.stageH) {
+        this.stageW = sw;
+        this.stageH = sh;
+        this.stageCanvas.width = Math.max(1, Math.floor(sw * dpr));
+        this.stageCanvas.height = Math.max(1, Math.floor(sh * dpr));
+        this.stageCanvas.style.width = `${sw}px`;
+        this.stageCanvas.style.height = `${sh}px`;
+      }
+      if (this.globalCanvas && this.globalEl) {
+        const grect = this.globalEl.getBoundingClientRect();
+        const gw = Math.max(0, Math.floor(grect.width));
+        const gh = Math.max(0, Math.floor(grect.height));
+        if (gw !== this.globalW || gh !== this.globalH) {
+          this.globalW = gw;
+          this.globalH = gh;
+          this.globalCanvas.width = Math.max(1, Math.floor(gw * dpr));
+          this.globalCanvas.height = Math.max(1, Math.floor(gh * dpr));
+          this.globalCanvas.style.width = `${gw}px`;
+          this.globalCanvas.style.height = `${gh}px`;
+        }
       }
       this.dirty = true;
     };
-    this.handleTouch = (ev) => {
-      if (!ev.touches.length || !this.canvas) return;
+    this.handleScroll = () => {
+      if (!this.stageEl) return;
+      this.stageScrollY = this.stageEl.scrollTop;
+      this.dirty = true;
+    };
+    this.handleStageMouseMove = (ev) => {
+      if (!this.stageCanvas) return;
+      const r2 = this.stageCanvas.getBoundingClientRect();
+      this.stageMouse = { x: ev.clientX - r2.left, y: ev.clientY - r2.top };
+      this.dirty = true;
+    };
+    this.handleStageMouseLeave = () => {
+      this.stageMouse = { x: -1, y: -1 };
+      this.maybeHideTooltip("stage");
+      this.dirty = true;
+    };
+    this.handleStageTouch = (ev) => {
+      if (!ev.touches.length || !this.stageCanvas) return;
       const t2 = ev.touches[0];
-      const rect = this.canvas.getBoundingClientRect();
-      this.mouseX = t2.clientX - rect.left;
-      this.mouseY = t2.clientY - rect.top;
+      const r2 = this.stageCanvas.getBoundingClientRect();
+      this.stageMouse = { x: t2.clientX - r2.left, y: t2.clientY - r2.top };
+      this.dirty = true;
+    };
+    this.handleGlobalMouseMove = (ev) => {
+      if (!this.globalCanvas) return;
+      const r2 = this.globalCanvas.getBoundingClientRect();
+      this.globalMouse = { x: ev.clientX - r2.left, y: ev.clientY - r2.top };
+      this.dirty = true;
+    };
+    this.handleGlobalMouseLeave = () => {
+      this.globalMouse = { x: -1, y: -1 };
+      this.maybeHideTooltip("global");
+      this.dirty = true;
+    };
+    this.handleGlobalTouch = (ev) => {
+      if (!ev.touches.length || !this.globalCanvas) return;
+      const t2 = ev.touches[0];
+      const r2 = this.globalCanvas.getBoundingClientRect();
+      this.globalMouse = { x: t2.clientX - r2.left, y: t2.clientY - r2.top };
       this.dirty = true;
     };
   }
@@ -1778,7 +1910,7 @@ let HermesCard = class extends i {
     }
     const resolved = resolveConfig(config);
     const engineCfg = {
-      timespan_seconds: resolved.timespanSeconds,
+      timespan_seconds: Math.max(resolved.timespanSeconds, resolved.globalTimespanSeconds),
       max_pings: resolved.maxPings,
       ignore_unavailable: resolved.ignoreUnavailable,
       entities: resolved.entities,
@@ -1798,10 +1930,22 @@ let HermesCard = class extends i {
     this._config = resolved;
     this.dirty = true;
   }
-  //Used by the masonry layout to pre-size the card before
-  //first paint. Roughly one row per ~50 px.
+  //Masonry sizing. 1 unit ≈ 50 px → 6 ≈ 300 px tall.
   getCardSize() {
-    return Math.max(3, Math.round(this._config.height / 50));
+    return 6;
+  }
+  //Sections grid sizing. 1 row ≈ 56 px; we default to 6 rows
+  //(≈ 340 px) at full section width, but allow up to 24 rows
+  //and let the user shrink to a 3-row chip.
+  getGridOptions() {
+    return {
+      rows: 6,
+      columns: 12,
+      min_rows: 3,
+      max_rows: 24,
+      min_columns: 6,
+      max_columns: 12
+    };
   }
   //----- lifecycle -----
   connectedCallback() {
@@ -1819,27 +1963,50 @@ let HermesCard = class extends i {
     }
     this.engine?.unbind();
     this.stopRaf();
-    this.teardownObserver();
+    this.teardownDom();
   }
   updated(changed) {
     super.updated(changed);
+    if (!this.rootEl) {
+      this.rootEl = this.renderRoot.querySelector(".root");
+    }
     if (!this.stageEl) {
       this.stageEl = this.renderRoot.querySelector(".stage");
-    }
-    if (!this.canvas) {
-      this.canvas = this.renderRoot.querySelector("canvas");
-      if (this.canvas) {
-        this.ctx = this.canvas.getContext("2d", { alpha: true });
-        this.canvas.addEventListener("mousemove", this.handleMouseMove);
-        this.canvas.addEventListener("mouseleave", this.handleMouseLeave);
-        this.canvas.addEventListener("touchstart", this.handleTouch, { passive: true });
-        this.canvas.addEventListener("touchmove", this.handleTouch, { passive: true });
-        this.canvas.addEventListener("touchend", this.handleMouseLeave);
+      if (this.stageEl) {
+        this.stageEl.addEventListener("scroll", this.handleScroll, { passive: true });
       }
     }
-    if (!this.resizeObserver && this.stageEl) {
+    if (!this.spacerEl) {
+      this.spacerEl = this.renderRoot.querySelector(".stage-spacer");
+    }
+    if (!this.stageCanvas) {
+      this.stageCanvas = this.renderRoot.querySelector(".stage-pin canvas");
+      if (this.stageCanvas) {
+        this.stageCtx = this.stageCanvas.getContext("2d", { alpha: true });
+        this.stageCanvas.addEventListener("mousemove", this.handleStageMouseMove);
+        this.stageCanvas.addEventListener("mouseleave", this.handleStageMouseLeave);
+        this.stageCanvas.addEventListener("touchstart", this.handleStageTouch, { passive: true });
+        this.stageCanvas.addEventListener("touchmove", this.handleStageTouch, { passive: true });
+        this.stageCanvas.addEventListener("touchend", this.handleStageMouseLeave);
+      }
+    }
+    if (!this.globalEl) {
+      this.globalEl = this.renderRoot.querySelector(".global");
+    }
+    if (!this.globalCanvas) {
+      this.globalCanvas = this.renderRoot.querySelector(".global canvas");
+      if (this.globalCanvas) {
+        this.globalCtx = this.globalCanvas.getContext("2d", { alpha: true });
+        this.globalCanvas.addEventListener("mousemove", this.handleGlobalMouseMove);
+        this.globalCanvas.addEventListener("mouseleave", this.handleGlobalMouseLeave);
+        this.globalCanvas.addEventListener("touchstart", this.handleGlobalTouch, { passive: true });
+        this.globalCanvas.addEventListener("touchmove", this.handleGlobalTouch, { passive: true });
+        this.globalCanvas.addEventListener("touchend", this.handleGlobalMouseLeave);
+      }
+    }
+    if (!this.resizeObserver && this.rootEl) {
       this.resizeObserver = new ResizeObserver(() => this.handleResize());
-      this.resizeObserver.observe(this.stageEl);
+      this.resizeObserver.observe(this.rootEl);
       this.handleResize();
     }
     if (changed.has("hass") && this.hass && this.engine) {
@@ -1852,7 +2019,7 @@ let HermesCard = class extends i {
     const tt = this._tooltip;
     return b`
             <ha-card>
-                <div class="root" style=${`height:${cfg.height}px;`}>
+                <div class="root">
                     <div class="header">
                         <div class="title">${cfg.title}</div>
                         <div class="subtitle">
@@ -1861,11 +2028,23 @@ let HermesCard = class extends i {
                         <div class="spacer"></div>
                         ${cfg.showLegend ? this.renderLegend() : A}
                     </div>
+
+                    ${cfg.showGlobal ? b`
+                        <div class="global" style=${`height:${cfg.globalHeight}px;`}>
+                            <canvas></canvas>
+                        </div>
+                        <div class="divider"></div>
+                    ` : A}
+
                     <div class="stage">
-                        <canvas></canvas>
-                        ${this._entityCount === 0 ? this.renderEmpty() : A}
-                        ${tt.visible ? this.renderTooltip(tt) : A}
+                        <div class="stage-pin">
+                            <canvas></canvas>
+                        </div>
+                        <div class="stage-spacer"></div>
                     </div>
+
+                    ${this._entityCount === 0 ? this.renderEmpty() : A}
+                    ${tt.visible ? this.renderTooltip(tt) : A}
                 </div>
             </ha-card>
         `;
@@ -1926,11 +2105,16 @@ let HermesCard = class extends i {
                     <span class="label">${this._i18n.tooltipAgo}</span>
                     <span class="value">${tt.ago}</span>
                 </div>
+                ${tt.showCount ? b`
+                    <div class="tt-row">
+                        <span class="label">${this._i18n.tooltipCount}</span>
+                        <span class="value">${tt.count}</span>
+                    </div>` : A}
                 <div class="tt-arrow"></div>
             </div>
         `;
   }
-  //----- canvas / animation -----
+  //----- animation loop -----
   startRaf() {
     if (this.rafHandle !== 0) return;
     const loop = () => {
@@ -1948,71 +2132,114 @@ let HermesCard = class extends i {
   requestRedraw() {
     this.dirty = true;
   }
-  teardownObserver() {
+  teardownDom() {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
-    if (this.canvas) {
-      this.canvas.removeEventListener("mousemove", this.handleMouseMove);
-      this.canvas.removeEventListener("mouseleave", this.handleMouseLeave);
-      this.canvas.removeEventListener("touchstart", this.handleTouch);
-      this.canvas.removeEventListener("touchmove", this.handleTouch);
-      this.canvas.removeEventListener("touchend", this.handleMouseLeave);
+    if (this.stageEl) {
+      this.stageEl.removeEventListener("scroll", this.handleScroll);
+    }
+    if (this.stageCanvas) {
+      this.stageCanvas.removeEventListener("mousemove", this.handleStageMouseMove);
+      this.stageCanvas.removeEventListener("mouseleave", this.handleStageMouseLeave);
+      this.stageCanvas.removeEventListener("touchstart", this.handleStageTouch);
+      this.stageCanvas.removeEventListener("touchmove", this.handleStageTouch);
+      this.stageCanvas.removeEventListener("touchend", this.handleStageMouseLeave);
+    }
+    if (this.globalCanvas) {
+      this.globalCanvas.removeEventListener("mousemove", this.handleGlobalMouseMove);
+      this.globalCanvas.removeEventListener("mouseleave", this.handleGlobalMouseLeave);
+      this.globalCanvas.removeEventListener("touchstart", this.handleGlobalTouch);
+      this.globalCanvas.removeEventListener("touchmove", this.handleGlobalTouch);
+      this.globalCanvas.removeEventListener("touchend", this.handleGlobalMouseLeave);
     }
   }
+  //----- paint -----
   paint() {
-    if (!this.ctx || !this.canvas || !this.engine) return;
-    if (this.stageWidth === 0 || this.stageHeight === 0) return;
+    if (!this.engine) return;
     const snapshot = this.engine.getSnapshot();
     const hasMotion = snapshot.pings.length > 0;
     if (!hasMotion && !this.dirty) return;
     this.dirty = false;
-    const ctx = this.ctx;
+    const totalContentHeight = this.computeTotalContentHeight(snapshot.lanes.length);
+    if (this.spacerEl) {
+      const spacerH = Math.max(0, totalContentHeight - this.stageH);
+      this.spacerEl.style.height = `${Math.max(1, spacerH)}px`;
+    }
+    let tooltipUpdated = false;
+    const stageTooltip = this.paintStage(snapshot, totalContentHeight);
+    const globalTooltip = this._config.showGlobal ? this.paintGlobal(snapshot) : null;
+    const winner = (this.globalMouse.x >= 0 ? globalTooltip : null) ?? (this.stageMouse.x >= 0 ? stageTooltip : null) ?? null;
+    if (winner) {
+      this._tooltip = winner;
+      tooltipUpdated = true;
+    } else if (this._tooltip.visible) {
+      this._tooltip = EMPTY_TOOLTIP;
+      tooltipUpdated = true;
+    }
+    if (tooltipUpdated) {
+      this.dirty = true;
+    }
+  }
+  computeTotalContentHeight(laneCount) {
+    if (laneCount === 0) return 0;
+    return STAGE_PAD_TOP + laneCount * LANE_PITCH + STAGE_PAD_BOTTOM;
+  }
+  paintStage(snapshot, totalContentHeight) {
+    const ctx = this.stageCtx;
+    if (!ctx || this.stageW === 0 || this.stageH === 0) return null;
     const cfg = this._config;
     ctx.save();
     ctx.scale(this.dpr, this.dpr);
-    ctx.clearRect(0, 0, this.stageWidth, this.stageHeight);
-    const lanes = snapshot.lanes;
-    const laneCount = Math.max(1, lanes.length);
+    ctx.clearRect(0, 0, this.stageW, this.stageH);
     const labelW = cfg.labelWidth;
-    const innerLeft = labelW;
-    const innerRight = this.stageWidth - STAGE_PAD_RIGHT;
-    const innerTop = STAGE_PAD_TOP;
-    const innerBottom = this.stageHeight - STAGE_PAD_BOTTOM;
-    const innerHeight = Math.max(0, innerBottom - innerTop);
+    const valueW = cfg.showLastValue ? cfg.valueWidth : 0;
+    const gutterW = labelW > 0 ? labelW + valueW : 0;
+    const innerLeft = gutterW;
+    const innerRight = this.stageW - STAGE_PAD_RIGHT;
     const innerWidth = Math.max(0, innerRight - innerLeft);
-    let laneHeight = innerHeight / laneCount - LANE_GAP;
-    laneHeight = Math.max(MIN_LANE_HEIGHT, Math.min(MAX_LANE_HEIGHT, laneHeight));
-    const usedHeight = laneHeight * laneCount + LANE_GAP * (laneCount - 1);
-    const yStart = innerTop + Math.max(0, (innerHeight - usedHeight) / 2);
-    const laneByEntity = /* @__PURE__ */ new Map();
-    for (let i2 = 0; i2 < lanes.length; i2++) {
-      const lane = lanes[i2];
-      const y3 = yStart + i2 * (laneHeight + LANE_GAP) + laneHeight / 2;
-      laneByEntity.set(lane.entityId, { y: y3, h: laneHeight, color: lane.color, lane });
+    const scrollY = clamp(
+      this.stageScrollY,
+      0,
+      Math.max(0, totalContentHeight - this.stageH)
+    );
+    const firstLane = Math.max(
+      0,
+      Math.floor((scrollY - STAGE_PAD_TOP) / LANE_PITCH)
+    );
+    const lastLane = Math.min(
+      snapshot.lanes.length - 1,
+      Math.ceil((scrollY + this.stageH - STAGE_PAD_TOP) / LANE_PITCH)
+    );
+    const laneY = /* @__PURE__ */ new Map();
+    for (let i2 = firstLane; i2 <= lastLane; i2++) {
+      const lane = snapshot.lanes[i2];
+      if (!lane) continue;
+      const y3 = STAGE_PAD_TOP + i2 * LANE_PITCH + LANE_PITCH / 2 - scrollY;
+      laneY.set(lane.entityId, { y: y3, color: lane.color, lane });
     }
-    this.drawLaneTracks(ctx, lanes, laneByEntity, innerLeft, innerRight, labelW);
-    const timespanMs = snapshot.timespanMs;
+    this.drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW);
+    const timespanMs = Math.max(1e3, cfg.timespanSeconds * 1e3);
     const now = snapshot.now;
     let bestHit = null;
     for (let i2 = 0; i2 < snapshot.pings.length; i2++) {
       const p2 = snapshot.pings[i2];
-      const lane = laneByEntity.get(p2.entityId);
-      if (!lane) continue;
+      const slot = laneY.get(p2.entityId);
+      if (!slot) continue;
       const ageMs = now - p2.ts;
       const frac = ageMs / timespanMs;
       if (frac < 0 || frac > 1) continue;
       const x2 = innerRight - frac * innerWidth;
-      const y3 = lane.y;
-      const baseR = lane.h * 0.34;
+      const y3 = slot.y;
+      const baseR = LANE_INNER * 0.34;
       const r2 = Math.max(2.5, baseR * (0.5 + p2.magnitude * 0.6));
       const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
       const alpha = 1 - tailFrac;
       this.drawPing(ctx, x2, y3, r2, p2.color, alpha);
-      if (this.mouseX >= 0) {
-        const dx = x2 - this.mouseX;
-        const dy = y3 - this.mouseY;
+      if (this.stageMouse.x >= 0) {
+        const dx = x2 - this.stageMouse.x;
+        const dy = y3 - this.stageMouse.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const reach = r2 + HIT_RADIUS_PAD;
         if (dist <= reach && (!bestHit || dist < bestHit.dist)) {
@@ -2021,58 +2248,109 @@ let HermesCard = class extends i {
       }
     }
     ctx.restore();
-    if (bestHit) {
-      this.setTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, bestHit.r);
-    } else if (this._tooltip.visible) {
-      this._tooltip = EMPTY_TOOLTIP;
+    if (bestHit && this.stageCanvas) {
+      return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.stageCanvas, false);
     }
+    return null;
   }
-  drawLaneTracks(ctx, lanes, laneByEntity, innerLeft, innerRight, labelW) {
+  paintGlobal(snapshot) {
+    const ctx = this.globalCtx;
+    if (!ctx || this.globalW === 0 || this.globalH === 0) return null;
     const cfg = this._config;
-    const labelFont = "500 11px " + getFontFamily();
-    const valueFont = "400 10.5px " + getMonoFamily();
-    const dimColor = "rgba(255,255,255,0.55)";
-    const muteColor = "rgba(255,255,255,0.35)";
+    ctx.save();
+    ctx.scale(this.dpr, this.dpr);
+    ctx.clearRect(0, 0, this.globalW, this.globalH);
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
     ctx.lineWidth = 1;
     ctx.setLineDash([1.5, 4]);
-    for (const lane of lanes) {
-      const slot = laneByEntity.get(lane.entityId);
-      if (!slot) continue;
+    ctx.beginPath();
+    ctx.moveTo(GLOBAL_PAD_X, this.globalH / 2);
+    ctx.lineTo(this.globalW - GLOBAL_PAD_X, this.globalH / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const innerLeft = GLOBAL_PAD_X;
+    const innerRight = this.globalW - GLOBAL_PAD_X;
+    const innerWidth = Math.max(0, innerRight - innerLeft);
+    const timespanMs = Math.max(500, cfg.globalTimespanSeconds * 1e3);
+    const now = snapshot.now;
+    const maxR = Math.min(14, (this.globalH - GLOBAL_INNER_PAD * 2) * 0.45);
+    const baseR = 1.8;
+    const jitterRange = this.globalH / 2 - GLOBAL_INNER_PAD - maxR;
+    const centreY = this.globalH / 2;
+    let bestHit = null;
+    for (let i2 = 0; i2 < snapshot.pings.length; i2++) {
+      const p2 = snapshot.pings[i2];
+      const ageMs = now - p2.ts;
+      const frac = ageMs / timespanMs;
+      if (frac < 0 || frac > 1) continue;
+      const x2 = innerRight - frac * innerWidth;
+      const h2 = entityHash(p2.entityId);
+      const y3 = centreY + (h2 - 0.5) * 2 * Math.max(0, jitterRange);
+      const r2 = Math.min(maxR, baseR + Math.log2(p2.pingIndex + 1) * 1.6);
+      const tailFrac = Math.max(0, (frac - (1 - FADE_TAIL_FRAC)) / FADE_TAIL_FRAC);
+      const alpha = 1 - tailFrac;
+      this.drawPing(ctx, x2, y3, r2, p2.color, alpha);
+      if (this.globalMouse.x >= 0) {
+        const dx = x2 - this.globalMouse.x;
+        const dy = y3 - this.globalMouse.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const reach = r2 + HIT_RADIUS_PAD;
+        if (dist <= reach && (!bestHit || dist < bestHit.dist)) {
+          bestHit = { ping: p2, dist, x: x2, y: y3, r: r2 };
+        }
+      }
+    }
+    ctx.restore();
+    if (bestHit && this.globalCanvas) {
+      return this.buildTooltipFromPing(bestHit.ping, bestHit.x, bestHit.y, this.globalCanvas, true);
+    }
+    return null;
+  }
+  drawLaneTracks(ctx, laneY, innerLeft, innerRight, labelW, valueW) {
+    const labelFont = "500 11px " + getFontFamily();
+    const valueFont = "400 10.5px " + getMonoFamily();
+    const dimColor = "rgba(255,255,255,0.62)";
+    const muteColor = "rgba(255,255,255,0.38)";
+    const nameMaxWidth = labelW > 0 ? Math.max(0, labelW - LABEL_TEXT_START - LABEL_COL_GAP / 2) : 0;
+    const valueAnchorX = labelW + valueW - VALUE_RIGHT_PAD;
+    const valueMaxWidth = Math.max(0, valueW - LABEL_COL_GAP / 2 - VALUE_RIGHT_PAD);
+    ctx.lineWidth = 1;
+    for (const slot of laneY.values()) {
+      const lane = slot.lane;
+      ctx.setLineDash([1.5, 4]);
       ctx.strokeStyle = withAlpha(lane.color, 0.18);
       ctx.beginPath();
       ctx.moveTo(innerLeft, slot.y);
       ctx.lineTo(innerRight, slot.y);
       ctx.stroke();
+      ctx.setLineDash([]);
       if (labelW > 0) {
-        ctx.setLineDash([]);
         ctx.fillStyle = lane.color;
         ctx.beginPath();
-        ctx.arc(12, slot.y, 3.2, 0, Math.PI * 2);
+        ctx.arc(LABEL_DOT_X, slot.y, LABEL_DOT_R, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = dimColor;
         ctx.font = labelFont;
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
         ctx.fillText(
-          clipText(ctx, lane.friendlyName, labelW - 26 - (cfg.showLastValue ? 48 : 0)),
-          22,
+          clipText(ctx, lane.friendlyName, nameMaxWidth),
+          LABEL_TEXT_START,
           slot.y
         );
-        if (cfg.showLastValue && lane.lastState !== null) {
+        if (valueW > 0 && lane.lastState !== null) {
           ctx.fillStyle = muteColor;
           ctx.font = valueFont;
           ctx.textAlign = "right";
           const valueStr = formatLaneValue(lane.lastState, lane.unit);
           ctx.fillText(
-            clipText(ctx, valueStr, 60),
-            labelW - 8,
+            clipText(ctx, valueStr, valueMaxWidth),
+            valueAnchorX,
             slot.y
           );
         }
-        ctx.setLineDash([1.5, 4]);
       }
     }
-    ctx.setLineDash([]);
   }
   drawPing(ctx, x2, y3, r2, color, alpha) {
     const haloR = r2 * 2.8;
@@ -2095,27 +2373,40 @@ let HermesCard = class extends i {
     ctx.arc(x2 - r2 * 0.25, y3 - r2 * 0.25, Math.max(0.6, r2 * 0.18), 0, Math.PI * 2);
     ctx.fill();
   }
-  setTooltipFromPing(p2, x2, y3, _r) {
+  //Translate a (canvas-local) sphere position into a tooltip
+  //placed in .root coordinates so the tooltip element (which
+  //lives directly under .root) lines up correctly regardless of
+  //which canvas the ping came from.
+  buildTooltipFromPing(p2, canvasX, canvasY, sourceCanvas, global) {
+    const rootRect = this.rootEl?.getBoundingClientRect();
+    const canvasRect = sourceCanvas.getBoundingClientRect();
+    const x2 = canvasRect.left - (rootRect?.left ?? 0) + canvasX;
+    const y3 = canvasRect.top - (rootRect?.top ?? 0) + canvasY;
     const ageMs = Date.now() - p2.ts;
-    const ago = formatAgo(ageMs, this._i18n);
-    const valueStr = formatLaneValue(p2.newState, p2.unit);
-    const prevStr = p2.oldState !== null ? formatLaneValue(p2.oldState, p2.unit) : "";
-    const next = {
+    return {
       visible: true,
       x: Math.round(x2),
       y: Math.round(y3),
       pingId: p2.id,
+      showCount: global,
       name: p2.friendlyName,
       entityId: p2.entityId,
-      value: valueStr,
-      previous: prevStr,
-      ago,
+      value: formatLaneValue(p2.newState, p2.unit),
+      previous: p2.oldState !== null ? formatLaneValue(p2.oldState, p2.unit) : "",
+      ago: formatAgo(ageMs, this._i18n),
+      count: p2.pingIndex,
       color: p2.color
     };
-    if (this._tooltip.pingId === next.pingId && this._tooltip.x === next.x && this._tooltip.y === next.y && this._tooltip.value === next.value && this._tooltip.ago === next.ago) {
-      return;
+  }
+  //When one strip loses the mouse we only drop the tooltip if
+  //it was being driven by *that* strip; otherwise we'd flicker
+  //away a tooltip the other canvas is actively showing.
+  maybeHideTooltip(source) {
+    if (!this._tooltip.visible) return;
+    const driverIsGlobal = this._tooltip.showCount;
+    if (source === "global" && driverIsGlobal || source === "stage" && !driverIsGlobal) {
+      this._tooltip = EMPTY_TOOLTIP;
     }
-    this._tooltip = next;
   }
 };
 HermesCard.styles = hermesCardStyles;
@@ -2139,14 +2430,18 @@ HermesCard = __decorateClass([
 ], HermesCard);
 function resolveConfig(cfg) {
   const showLabels = cfg.show_labels !== false;
-  const labelWidth = showLabels ? clamp(cfg.label_width ?? 168, 0, 320) : 0;
+  const labelWidth = showLabels ? clamp(cfg.label_width ?? 150, 0, 320) : 0;
+  const valueWidth = clamp(cfg.value_width ?? 64, 0, 200);
   return {
     title: (cfg.title ?? "Activity").trim() || "Activity",
     timespanSeconds: clamp(cfg.timespan_seconds ?? 300, 10, 24 * 3600),
-    height: clamp(cfg.height ?? 320, 140, 1200),
+    globalTimespanSeconds: clamp(cfg.global_timespan_seconds ?? 60, 5, 3600),
+    globalHeight: clamp(cfg.global_height ?? 72, 32, 200),
     labelWidth,
+    valueWidth,
     showLegend: cfg.show_legend !== false,
     showLastValue: cfg.show_last_value !== false,
+    showGlobal: cfg.show_global !== false,
     maxPings: clamp(cfg.max_pings ?? 2e3, 50, 2e4),
     ignoreUnavailable: cfg.ignore_unavailable !== false,
     entities: arrOrUndef(cfg.entities),
@@ -2171,9 +2466,8 @@ function withAlpha(hex, alpha) {
   return `rgba(${r2}, ${g2}, ${b2}, ${alpha})`;
 }
 function clipText(ctx, text, maxWidth) {
-  if (maxWidth <= 0 || ctx.measureText(text).width <= maxWidth) {
-    return text;
-  }
+  if (maxWidth <= 0) return "";
+  if (ctx.measureText(text).width <= maxWidth) return text;
   const ellipsis = "…";
   let lo = 0;
   let hi = text.length;
@@ -2198,9 +2492,6 @@ function formatLaneValue(state2, unit) {
   return state2;
 }
 function formatNumber(n3) {
-  if (Math.abs(n3) >= 1e3) {
-    return n3.toLocaleString(void 0, { maximumFractionDigits: 1 });
-  }
   if (Math.abs(n3) >= 10) {
     return n3.toLocaleString(void 0, { maximumFractionDigits: 1 });
   }
@@ -2217,6 +2508,19 @@ function getFontFamily() {
 }
 function getMonoFamily() {
   return 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+}
+const _entityHashCache = /* @__PURE__ */ new Map();
+function entityHash(id) {
+  const cached = _entityHashCache.get(id);
+  if (cached !== void 0) return cached;
+  let h2 = 2166136261;
+  for (let i2 = 0; i2 < id.length; i2++) {
+    h2 ^= id.charCodeAt(i2);
+    h2 = h2 * 16777619 >>> 0;
+  }
+  const norm = h2 / 4294967296;
+  _entityHashCache.set(id, norm);
+  return norm;
 }
 export {
   HermesCard
