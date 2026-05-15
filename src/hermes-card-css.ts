@@ -38,7 +38,7 @@ export const hermesCardStyles = css`
     {
         position: relative;
         overflow: hidden;
-        background: var(--hermes-bg-base, #0a0c10);
+        background: var(--hermes-bg-base, #191a1b);
         color: var(--hermes-fg);
         border-radius: var(--ha-card-border-radius, 12px);
         font-family: var(--hermes-label-font);
@@ -49,9 +49,6 @@ export const hermesCardStyles = css`
         /*  New stacking context so absolute children with z-index
             stay scoped to the card. */
         isolation: isolate;
-        box-shadow:
-            inset 0 0 0 1px var(--hermes-card-inset, rgba(255, 255, 255, 0.03)),
-            inset 0 -40px 80px -40px var(--hermes-card-vignette, rgba(0, 0, 0, 0.6));
     }
 
     /*  Mini variant.
@@ -85,7 +82,7 @@ export const hermesCardStyles = css`
         height:         100%;
         min-height:     0;
         position:       relative;
-        background:     var(--hermes-bg-grad, none);
+        background:     var(--hermes-bg-base);
 
         --hermes-label-font:
             ui-sans-serif, system-ui, -apple-system, "Segoe UI",
@@ -95,48 +92,50 @@ export const hermesCardStyles = css`
             Consolas, "Liberation Mono", monospace;
     }
 
+    /*  Both themes share the same shape and the same hairline
+        ladder; only the "ink colour" pair (background + text)
+        flips. Values match the sibling Helios card's plate
+        palette: #191a1b / #e6e6e6 for the dark plate, plain
+        white / black for the light surface, so two cards from
+        the same family land on the same skin when stacked on
+        one dashboard. */
+
     /*  --- DARK theme (default) ---------------------------------- */
     .root.theme-dark
     {
-        --hermes-bg-base:        #0a0c10;
-        --hermes-bg-grad:        radial-gradient(120% 100% at 60% 0%, #0c0f15 0%, #07090c 100%);
-        --hermes-card-inset:     rgba(255, 255, 255, 0.03);
-        --hermes-card-vignette:  rgba(0, 0, 0, 0.6);
-        --hermes-fg:             #e7ecf3;
-        --hermes-fg-dim:         #9aa3b2;
-        --hermes-fg-mute:        #5a6273;
+        --hermes-bg-base:        #191a1b;
+        --hermes-fg:             #e6e6e6;
+        --hermes-fg-dim:         #cccccc;
+        --hermes-fg-mute:        rgba(255, 255, 255, 0.45);
         --hermes-rule:           rgba(255, 255, 255, 0.06);
-        --hermes-rule-strong:    rgba(255, 255, 255, 0.12);
-        --hermes-divider-tint:   rgba(255, 255, 255, 0.12);
-        --hermes-tooltip-bg:     rgba(16, 19, 26, 0.92);
-        --hermes-tooltip-bd:     rgba(255, 255, 255, 0.08);
-        --hermes-scrollbar:      rgba(255, 255, 255, 0.14);
-        --hermes-scrollbar-hov:  rgba(255, 255, 255, 0.24);
-        --hermes-midline:        rgba(255, 255, 255, 0.05);
-        --hermes-canvas-text:    rgba(255, 255, 255, 0.62);
-        --hermes-canvas-mute:    rgba(255, 255, 255, 0.38);
+        --hermes-rule-strong:    rgba(255, 255, 255, 0.20);
+        --hermes-divider-tint:   rgba(255, 255, 255, 0.20);
+        --hermes-tooltip-bg:     #1f2021;
+        --hermes-tooltip-bd:     rgba(255, 255, 255, 0.20);
+        --hermes-scrollbar:      rgba(255, 255, 255, 0.20);
+        --hermes-scrollbar-hov:  rgba(255, 255, 255, 0.35);
+        --hermes-midline:        rgba(255, 255, 255, 0.06);
+        --hermes-canvas-text:    rgba(230, 230, 230, 0.78);
+        --hermes-canvas-mute:    rgba(230, 230, 230, 0.45);
     }
 
     /*  --- LIGHT theme ------------------------------------------- */
     .root.theme-light
     {
-        --hermes-bg-base:        #f3f5f9;
-        --hermes-bg-grad:        radial-gradient(120% 100% at 60% 0%, #ffffff 0%, #eef1f6 100%);
-        --hermes-card-inset:     rgba(0, 0, 0, 0.04);
-        --hermes-card-vignette:  rgba(0, 0, 0, 0.06);
-        --hermes-fg:             #1a1d23;
-        --hermes-fg-dim:         #4a5160;
-        --hermes-fg-mute:        #8b94a5;
-        --hermes-rule:           rgba(0, 0, 0, 0.05);
-        --hermes-rule-strong:    rgba(0, 0, 0, 0.10);
-        --hermes-divider-tint:   rgba(0, 0, 0, 0.10);
-        --hermes-tooltip-bg:     rgba(255, 255, 255, 0.96);
-        --hermes-tooltip-bd:     rgba(0, 0, 0, 0.08);
-        --hermes-scrollbar:      rgba(0, 0, 0, 0.18);
-        --hermes-scrollbar-hov:  rgba(0, 0, 0, 0.32);
-        --hermes-midline:        rgba(0, 0, 0, 0.05);
-        --hermes-canvas-text:    rgba(0, 0, 0, 0.70);
-        --hermes-canvas-mute:    rgba(0, 0, 0, 0.42);
+        --hermes-bg-base:        #ffffff;
+        --hermes-fg:             #000000;
+        --hermes-fg-dim:         #2a2e34;
+        --hermes-fg-mute:        rgba(0, 0, 0, 0.45);
+        --hermes-rule:           rgba(0, 0, 0, 0.06);
+        --hermes-rule-strong:    rgba(0, 0, 0, 0.20);
+        --hermes-divider-tint:   rgba(0, 0, 0, 0.20);
+        --hermes-tooltip-bg:     #ffffff;
+        --hermes-tooltip-bd:     rgba(0, 0, 0, 0.20);
+        --hermes-scrollbar:      rgba(0, 0, 0, 0.20);
+        --hermes-scrollbar-hov:  rgba(0, 0, 0, 0.35);
+        --hermes-midline:        rgba(0, 0, 0, 0.06);
+        --hermes-canvas-text:    rgba(0, 0, 0, 0.78);
+        --hermes-canvas-mute:    rgba(0, 0, 0, 0.45);
     }
 
     .header

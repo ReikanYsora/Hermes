@@ -1,6 +1,6 @@
 {
   "name": "hermes",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "HERMES - real-time entity state-change visualisation card for Home Assistant",
   "type": "module",
   "private": true,
