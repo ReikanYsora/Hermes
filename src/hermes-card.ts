@@ -219,6 +219,14 @@ const TOOLTIP_HALF_W   = 110;
 const TOOLTIP_H        = 110;
 const TOOLTIP_MARGIN   = 8;
 
+//Compact tooltip used in mini-card mode: only the entity name
+//and the current value land in the bubble, so it shrinks enough
+//to fit comfortably above or below a thin strip card without
+//tripping ha-card's overflow clip. Half-width matches the
+//slimmer max-width applied by .tooltip.mini in the stylesheet.
+const TOOLTIP_HALF_W_MINI = 90;
+const TOOLTIP_H_MINI      = 58;
+
 //Resolved palette for the canvas drawing layer, mirroring the
 //theme CSS variables. Read once per frame from getComputedStyle
 //so flipping the theme reskins the canvas on the next paint.
@@ -688,6 +696,30 @@ export class HermesCard extends LitElement
             `left:${tt.x}px;top:${tt.y}px;` +
             `border-color:${withAlpha(tt.color, 0.4)};` +
             `--hermes-arrow-offset:${tt.arrowOffset}px;`;
+
+        //Mini card: a single thin strip has neither the vertical
+        //room nor the visual budget for the full info block.
+        //We collapse to just the entity name and the current
+        //value, and switch the bubble to position:fixed so it
+        //can escape ha-card's overflow:hidden when the strip is
+        //pressed against the dashboard edge.
+        if (this.isMini)
+        {
+            return html`
+                <div
+                    class="tooltip visible mini ${placeClass}"
+                    style=${inlineStyle}
+                >
+                    <div class="tt-name" style=${`color:${tt.color};`}>${tt.name}</div>
+                    <div class="tt-row">
+                        <span class="label">${this._i18n.tooltipValue}</span>
+                        <span class="value">${tt.value}</span>
+                    </div>
+                    <div class="tt-arrow"></div>
+                </div>
+            `;
+        }
+
         return html`
             <div
                 class="tooltip visible ${placeClass}"
@@ -1345,37 +1377,15 @@ export class HermesCard extends LitElement
         global:      boolean
     ): TooltipState
     {
-        const rootRect = this.rootEl?.getBoundingClientRect();
-        const canvasRect = sourceCanvas.getBoundingClientRect();
-        const rootW = rootRect?.width  ?? this.stageW;
-        const rootH = rootRect?.height ?? this.stageH;
-
-        const rawX = (canvasRect.left - (rootRect?.left ?? 0)) + canvasX;
-        const rawY = (canvasRect.top  - (rootRect?.top  ?? 0)) + canvasY;
-
-        //Clamp x so the bubble never overflows the card's left
-        //or right edge. arrowOffset preserves the visual link to
-        //the sphere when we have to shift the bubble back inward.
-        const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
-        const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
-        const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
-        const arrowOffset = rawX - clampedX;
-
-        //If there isn't enough room above (rawY - TOOLTIP_H - 10
-        //would clip through the top), flip below the anchor. The
-        //bottom-side check is symmetric.
-        const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
-        const fitsBelow  = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
-        const place: 'above' | 'below' = wantsAbove ? 'above' : (fitsBelow ? 'below' : 'above');
-
+        const placement = this.computeTooltipPlacement(canvasX, canvasY, sourceCanvas);
         const ageMs = Date.now() - p.ts;
 
         return {
             visible:     true,
-            x:           Math.round(clampedX),
-            y:           Math.round(rawY),
-            place,
-            arrowOffset: Math.round(arrowOffset),
+            x:           placement.x,
+            y:           placement.y,
+            place:       placement.place,
+            arrowOffset: placement.arrowOffset,
             pingId:      p.id,
             showCount:   global,
             name:        p.friendlyName,
@@ -1385,6 +1395,70 @@ export class HermesCard extends LitElement
             ago:         formatAgo(ageMs, this._i18n),
             count:       p.pingIndex,
             color:       p.color
+        };
+    }
+
+    //Resolve a tooltip's screen position (clamp + above/below
+    //flip + arrow offset) once and reuse it for both the ping
+    //and the lane variants.
+    //
+    //In mini-card mode the bounds are the viewport (because the
+    //tooltip uses position:fixed to escape ha-card's overflow
+    //clip in a strip that's barely tall enough to host it). In
+    //the full card we stay in .root coords as before.
+    private computeTooltipPlacement(
+        canvasX:     number,
+        canvasY:     number,
+        sourceCanvas: HTMLCanvasElement
+    ): { x: number; y: number; place: 'above' | 'below'; arrowOffset: number }
+    {
+        const mini = this.isMini;
+        const canvasRect = sourceCanvas.getBoundingClientRect();
+        const rootRect = this.rootEl?.getBoundingClientRect();
+
+        const halfW = mini ? TOOLTIP_HALF_W_MINI : TOOLTIP_HALF_W;
+        const tipH  = mini ? TOOLTIP_H_MINI      : TOOLTIP_H;
+
+        let rawX: number;
+        let rawY: number;
+        let boundsW: number;
+        let boundsH: number;
+        let topPad: number;
+        let leftPad: number;
+
+        if (mini)
+        {
+            rawX    = canvasRect.left + canvasX;
+            rawY    = canvasRect.top  + canvasY;
+            boundsW = window.innerWidth;
+            boundsH = window.innerHeight;
+            topPad  = 0;
+            leftPad = 0;
+        }
+        else
+        {
+            rawX    = (canvasRect.left - (rootRect?.left ?? 0)) + canvasX;
+            rawY    = (canvasRect.top  - (rootRect?.top  ?? 0)) + canvasY;
+            boundsW = rootRect?.width  ?? this.stageW;
+            boundsH = rootRect?.height ?? this.stageH;
+            topPad  = 0;
+            leftPad = 0;
+        }
+
+        const minX = leftPad + TOOLTIP_MARGIN + halfW;
+        const maxX = Math.max(minX, boundsW - TOOLTIP_MARGIN - halfW);
+        const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
+        const arrowOffset = rawX - clampedX;
+
+        const wantsAbove = rawY - tipH - 10 >= topPad + TOOLTIP_MARGIN;
+        const fitsBelow  = rawY + tipH + 14 <= boundsH - TOOLTIP_MARGIN;
+        const place: 'above' | 'below' = wantsAbove ? 'above' : (fitsBelow ? 'below' : 'above');
+
+        return {
+            x:           Math.round(clampedX),
+            y:           Math.round(rawY),
+            place,
+            arrowOffset: Math.round(arrowOffset)
         };
     }
 
@@ -1401,22 +1475,7 @@ export class HermesCard extends LitElement
         sourceCanvas: HTMLCanvasElement
     ): TooltipState
     {
-        const rootRect = this.rootEl?.getBoundingClientRect();
-        const canvasRect = sourceCanvas.getBoundingClientRect();
-        const rootW = rootRect?.width  ?? this.stageW;
-        const rootH = rootRect?.height ?? this.stageH;
-
-        const rawX = (canvasRect.left - (rootRect?.left ?? 0)) + canvasX;
-        const rawY = (canvasRect.top  - (rootRect?.top  ?? 0)) + canvasY;
-
-        const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
-        const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
-        const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
-        const arrowOffset = rawX - clampedX;
-
-        const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
-        const fitsBelow  = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
-        const place: 'above' | 'below' = wantsAbove ? 'above' : (fitsBelow ? 'below' : 'above');
+        const placement = this.computeTooltipPlacement(canvasX, canvasY, sourceCanvas);
 
         //Use lane.lastPingTs as the "seen" anchor: it's the
         //timestamp of the most recent change for this entity,
@@ -1426,10 +1485,10 @@ export class HermesCard extends LitElement
 
         return {
             visible:     true,
-            x:           Math.round(clampedX),
-            y:           Math.round(rawY),
-            place,
-            arrowOffset: Math.round(arrowOffset),
+            x:           placement.x,
+            y:           placement.y,
+            place:       placement.place,
+            arrowOffset: placement.arrowOffset,
             //pingId is reused as an identity key for the
             //tooltip; we synthesise one from the lane index so
             //the renderer doesn't think the lane tooltip is the

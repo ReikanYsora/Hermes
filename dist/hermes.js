@@ -1028,7 +1028,7 @@ function isConnectivityBlip(oldRaw, newRaw) {
 function isMissingState(s2) {
   return s2 === null || s2 === "" || s2 === "unavailable" || s2 === "unknown";
 }
-const HERMES_VERSION = "0.5.0";
+const HERMES_VERSION = "0.5.1";
 const hermesCardStyles = i$3`
     :host
     {
@@ -1236,10 +1236,11 @@ const hermesCardStyles = i$3`
     }
 
     /*  Play / pause button centred on the global strip. Sits on
-        top of the canvas so it's always reachable, but with a
-        translucent background so the pings underneath remain
-        visible. Theme-aware via the existing CSS variables so
-        the disc stays legible on both light and dark surfaces. */
+        top of the canvas, but only fades in when the user hovers
+        the strip (or when the timeline is currently paused, so
+        the user always has a clear way back to live). Themed via
+        the existing CSS variables so the disc stays legible on
+        both light and dark surfaces. */
     .play-pause-btn
     {
         position: absolute;
@@ -1263,8 +1264,33 @@ const hermesCardStyles = i$3`
         box-shadow:
             0 4px 12px rgba(0, 0, 0, 0.25),
             0 0 0 1px rgba(0, 0, 0, 0.08);
-        transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
+
+        /*  Hidden until the user enters the strip. pointer-
+            events:none keeps the hit-test silent while fading
+            so accidental clicks land on the canvas underneath
+            instead of an invisible target. */
+        opacity: 0;
+        pointer-events: none;
+        transition:
+            opacity 180ms ease,
+            transform 120ms ease,
+            background-color 120ms ease,
+            border-color 120ms ease;
         z-index: 4;
+    }
+
+    /*  Reveal triggers:
+          - user is hovering the global strip,
+          - the button has keyboard focus,
+          - the timeline is paused (so the user can always find
+            the resume action without having to remember where to
+            mouse). */
+    .global:hover .play-pause-btn,
+    .play-pause-btn:focus-visible,
+    .play-pause-btn.is-paused
+    {
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .play-pause-btn:hover
@@ -1420,6 +1446,34 @@ const hermesCardStyles = i$3`
     .tooltip.visible
     {
         opacity: 1;
+    }
+
+    /*  Mini-card tooltip.
+        Switches the bubble to position:fixed so it can escape
+        ha-card's overflow:hidden (mini cards are thin strips
+        with very little vertical room - a normal absolute bubble
+        would get clipped above the strip). Content is also
+        slimmed down to a single name + value pair via a render
+        branch in hermes-card.ts, so the bubble doesn't need to
+        be tall in the first place. */
+    .tooltip.mini
+    {
+        position: fixed;
+        min-width: 100px;
+        max-width: 240px;
+        padding: 6px 9px;
+    }
+
+    .tooltip.mini .tt-name
+    {
+        font-size: 12px;
+        margin-bottom: 1px;
+        -webkit-line-clamp: 1;
+    }
+
+    .tooltip.mini .tt-row
+    {
+        font-size: 10.5px;
     }
 
     /*  Tooltip placement variants. The transform is what positions
@@ -2330,6 +2384,8 @@ const LIVE_EPSILON_MS = 60;
 const TOOLTIP_HALF_W = 110;
 const TOOLTIP_H = 110;
 const TOOLTIP_MARGIN = 8;
+const TOOLTIP_HALF_W_MINI = 90;
+const TOOLTIP_H_MINI = 58;
 const DEFAULT_PALETTE = {
   text: "rgba(255,255,255,0.62)",
   mute: "rgba(255,255,255,0.38)",
@@ -2735,6 +2791,21 @@ let HermesCard = class extends i {
   renderTooltip(tt) {
     const placeClass = tt.place === "below" ? "below" : "above";
     const inlineStyle = `left:${tt.x}px;top:${tt.y}px;border-color:${withAlpha(tt.color, 0.4)};--hermes-arrow-offset:${tt.arrowOffset}px;`;
+    if (this.isMini) {
+      return b`
+                <div
+                    class="tooltip visible mini ${placeClass}"
+                    style=${inlineStyle}
+                >
+                    <div class="tt-name" style=${`color:${tt.color};`}>${tt.name}</div>
+                    <div class="tt-row">
+                        <span class="label">${this._i18n.tooltipValue}</span>
+                        <span class="value">${tt.value}</span>
+                    </div>
+                    <div class="tt-arrow"></div>
+                </div>
+            `;
+    }
     return b`
             <div
                 class="tooltip visible ${placeClass}"
@@ -3072,26 +3143,14 @@ let HermesCard = class extends i {
   //the sphere when there isn't enough room above, and forward
   //the residual offset so the arrow still points at the ping.
   buildTooltipFromPing(p2, canvasX, canvasY, sourceCanvas, global) {
-    const rootRect = this.rootEl?.getBoundingClientRect();
-    const canvasRect = sourceCanvas.getBoundingClientRect();
-    const rootW = rootRect?.width ?? this.stageW;
-    const rootH = rootRect?.height ?? this.stageH;
-    const rawX = canvasRect.left - (rootRect?.left ?? 0) + canvasX;
-    const rawY = canvasRect.top - (rootRect?.top ?? 0) + canvasY;
-    const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
-    const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
-    const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
-    const arrowOffset = rawX - clampedX;
-    const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
-    const fitsBelow = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
-    const place = wantsAbove ? "above" : fitsBelow ? "below" : "above";
+    const placement = this.computeTooltipPlacement(canvasX, canvasY, sourceCanvas);
     const ageMs = Date.now() - p2.ts;
     return {
       visible: true,
-      x: Math.round(clampedX),
-      y: Math.round(rawY),
-      place,
-      arrowOffset: Math.round(arrowOffset),
+      x: placement.x,
+      y: placement.y,
+      place: placement.place,
+      arrowOffset: placement.arrowOffset,
       pingId: p2.id,
       showCount: global,
       name: p2.friendlyName,
@@ -3103,6 +3162,55 @@ let HermesCard = class extends i {
       color: p2.color
     };
   }
+  //Resolve a tooltip's screen position (clamp + above/below
+  //flip + arrow offset) once and reuse it for both the ping
+  //and the lane variants.
+  //
+  //In mini-card mode the bounds are the viewport (because the
+  //tooltip uses position:fixed to escape ha-card's overflow
+  //clip in a strip that's barely tall enough to host it). In
+  //the full card we stay in .root coords as before.
+  computeTooltipPlacement(canvasX, canvasY, sourceCanvas) {
+    const mini = this.isMini;
+    const canvasRect = sourceCanvas.getBoundingClientRect();
+    const rootRect = this.rootEl?.getBoundingClientRect();
+    const halfW = mini ? TOOLTIP_HALF_W_MINI : TOOLTIP_HALF_W;
+    const tipH = mini ? TOOLTIP_H_MINI : TOOLTIP_H;
+    let rawX;
+    let rawY;
+    let boundsW;
+    let boundsH;
+    let topPad;
+    let leftPad;
+    if (mini) {
+      rawX = canvasRect.left + canvasX;
+      rawY = canvasRect.top + canvasY;
+      boundsW = window.innerWidth;
+      boundsH = window.innerHeight;
+      topPad = 0;
+      leftPad = 0;
+    } else {
+      rawX = canvasRect.left - (rootRect?.left ?? 0) + canvasX;
+      rawY = canvasRect.top - (rootRect?.top ?? 0) + canvasY;
+      boundsW = rootRect?.width ?? this.stageW;
+      boundsH = rootRect?.height ?? this.stageH;
+      topPad = 0;
+      leftPad = 0;
+    }
+    const minX = leftPad + TOOLTIP_MARGIN + halfW;
+    const maxX = Math.max(minX, boundsW - TOOLTIP_MARGIN - halfW);
+    const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
+    const arrowOffset = rawX - clampedX;
+    const wantsAbove = rawY - tipH - 10 >= topPad + TOOLTIP_MARGIN;
+    const fitsBelow = rawY + tipH + 14 <= boundsH - TOOLTIP_MARGIN;
+    const place = wantsAbove ? "above" : fitsBelow ? "below" : "above";
+    return {
+      x: Math.round(clampedX),
+      y: Math.round(rawY),
+      place,
+      arrowOffset: Math.round(arrowOffset)
+    };
+  }
   //Lane variant of buildTooltipFromPing: surfaces the full
   //entity name + current value when the cursor is parked over
   //the (potentially clipped) label column. Reuses the same
@@ -3110,26 +3218,14 @@ let HermesCard = class extends i {
   //hover-and-move from a label onto a ping does not flash the
   //bubble.
   buildTooltipFromLane(lane, canvasX, canvasY, sourceCanvas) {
-    const rootRect = this.rootEl?.getBoundingClientRect();
-    const canvasRect = sourceCanvas.getBoundingClientRect();
-    const rootW = rootRect?.width ?? this.stageW;
-    const rootH = rootRect?.height ?? this.stageH;
-    const rawX = canvasRect.left - (rootRect?.left ?? 0) + canvasX;
-    const rawY = canvasRect.top - (rootRect?.top ?? 0) + canvasY;
-    const minX = TOOLTIP_MARGIN + TOOLTIP_HALF_W;
-    const maxX = Math.max(minX, rootW - TOOLTIP_MARGIN - TOOLTIP_HALF_W);
-    const clampedX = rawX < minX ? minX : rawX > maxX ? maxX : rawX;
-    const arrowOffset = rawX - clampedX;
-    const wantsAbove = rawY - TOOLTIP_H - 10 >= TOOLTIP_MARGIN;
-    const fitsBelow = rawY + TOOLTIP_H + 14 <= rootH - TOOLTIP_MARGIN;
-    const place = wantsAbove ? "above" : fitsBelow ? "below" : "above";
+    const placement = this.computeTooltipPlacement(canvasX, canvasY, sourceCanvas);
     const ageMs = Math.max(0, Date.now() - lane.lastPingTs);
     return {
       visible: true,
-      x: Math.round(clampedX),
-      y: Math.round(rawY),
-      place,
-      arrowOffset: Math.round(arrowOffset),
+      x: placement.x,
+      y: placement.y,
+      place: placement.place,
+      arrowOffset: placement.arrowOffset,
       //pingId is reused as an identity key for the
       //tooltip; we synthesise one from the lane index so
       //the renderer doesn't think the lane tooltip is the

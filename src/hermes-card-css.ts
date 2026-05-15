@@ -233,10 +233,11 @@ export const hermesCardStyles = css`
     }
 
     /*  Play / pause button centred on the global strip. Sits on
-        top of the canvas so it's always reachable, but with a
-        translucent background so the pings underneath remain
-        visible. Theme-aware via the existing CSS variables so
-        the disc stays legible on both light and dark surfaces. */
+        top of the canvas, but only fades in when the user hovers
+        the strip (or when the timeline is currently paused, so
+        the user always has a clear way back to live). Themed via
+        the existing CSS variables so the disc stays legible on
+        both light and dark surfaces. */
     .play-pause-btn
     {
         position: absolute;
@@ -260,8 +261,33 @@ export const hermesCardStyles = css`
         box-shadow:
             0 4px 12px rgba(0, 0, 0, 0.25),
             0 0 0 1px rgba(0, 0, 0, 0.08);
-        transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
+
+        /*  Hidden until the user enters the strip. pointer-
+            events:none keeps the hit-test silent while fading
+            so accidental clicks land on the canvas underneath
+            instead of an invisible target. */
+        opacity: 0;
+        pointer-events: none;
+        transition:
+            opacity 180ms ease,
+            transform 120ms ease,
+            background-color 120ms ease,
+            border-color 120ms ease;
         z-index: 4;
+    }
+
+    /*  Reveal triggers:
+          - user is hovering the global strip,
+          - the button has keyboard focus,
+          - the timeline is paused (so the user can always find
+            the resume action without having to remember where to
+            mouse). */
+    .global:hover .play-pause-btn,
+    .play-pause-btn:focus-visible,
+    .play-pause-btn.is-paused
+    {
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .play-pause-btn:hover
@@ -417,6 +443,34 @@ export const hermesCardStyles = css`
     .tooltip.visible
     {
         opacity: 1;
+    }
+
+    /*  Mini-card tooltip.
+        Switches the bubble to position:fixed so it can escape
+        ha-card's overflow:hidden (mini cards are thin strips
+        with very little vertical room - a normal absolute bubble
+        would get clipped above the strip). Content is also
+        slimmed down to a single name + value pair via a render
+        branch in hermes-card.ts, so the bubble doesn't need to
+        be tall in the first place. */
+    .tooltip.mini
+    {
+        position: fixed;
+        min-width: 100px;
+        max-width: 240px;
+        padding: 6px 9px;
+    }
+
+    .tooltip.mini .tt-name
+    {
+        font-size: 12px;
+        margin-bottom: 1px;
+        -webkit-line-clamp: 1;
+    }
+
+    .tooltip.mini .tt-row
+    {
+        font-size: 10.5px;
     }
 
     /*  Tooltip placement variants. The transform is what positions
